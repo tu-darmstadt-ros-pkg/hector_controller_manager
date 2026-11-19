@@ -1,0 +1,3 @@
+# Like late_activation_wrist for teleop over whole_body.
+switch auto +teleop fault=controller:teleop:activate:late@0 fault=hardware:arm:prepare:delay@0
+switch auto +teleop expect=accept

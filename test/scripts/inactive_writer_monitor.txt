@@ -1,0 +1,3 @@
+# Failed the inactive_writer check of the suite under an earlier restart without mode changes.
+switch strict +arm_ik +diff_drive -arm_pos -wrist -jsb -diff_drive
+switch auto +whole_body +monitor +diff_drive -odom_pub fault=controller:monitor:activate:error@4

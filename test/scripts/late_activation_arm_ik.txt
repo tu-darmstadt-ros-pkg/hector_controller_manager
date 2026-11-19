@@ -1,0 +1,4 @@
+# Like late_activation_wrist for arm_ik over arm_vel.
+switch strict -wrist -arm_ik -arm_vel
+switch auto +arm_ik fault=controller:arm_ik:activate:late@0 fault=hardware:arm:prepare:delay@0
+switch auto +arm_ik expect=accept

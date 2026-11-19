@@ -1,0 +1,102 @@
+# Fuzz seed 205198 as cm_test_suite d288d6d generated it, an inactive_writer gate of 700c44f
+switch strict +arm_ik +diff_drive -arm_pos -wrist -jsb -jsb -diff_drive
+switch auto +whole_body +monitor +diff_drive -odom_pub fault=controller:monitor:activate:error@4
+powercut on nowait
+recover flipper fault=hardware:flipper:configure:error
+switch strict +diff_drive +odom_pub +nav +nav -odom_pub fault=controller:flipper_pos:chained_mode:failure@0
+switch auto -flipper_vel fault=controller:flipper_vel:error:error@1 fault=controller:flipper_vel:deactivate:delay@0
+powercut off
+powercut on
+fault controller:arm_pos:update:error
+recover base fault=hardware:base:error:delay
+recover base
+switch auto +base_vel +arm_vel -flipper_vel -flipper_vel -teleop -flipper_pos -teleop
+switch strict +teleop +diff_drive +flipper_vel -arm_pos -diff_drive -arm_vel -odom_pub -teleop
+load teleop
+switch strict +arm_ik fault=controller:wrist:activate:throw@1
+switch strict +flipper_pos fault=hardware:flipper:deactivate:delay@2 fault=hardware:flipper:deactivate:error@4
+recover base
+load arm_ik
+switch force_auto -nav fault=controller:arm_ik:activate:failure@4
+switch strict -base_vel
+switch force_auto -arm_ik
+switch auto +odom_pub -odom_pub
+switch force_auto -flipper_pos
+switch auto -flipper_pos fault=controller:arm_vel:error:error@0 fault=hardware:flipper:write:throw@2
+switch force_auto +monitor
+fault controller:teleop:update:error
+switch auto +odom_pub -diff_drive
+fault controller:nav:update:error
+switch strict +nav +diff_drive +jsb +monitor fault=controller:wrist:error:failure@1
+switch strict +wrist -wrist stall
+switch force_auto +whole_body
+switch strict +monitor
+switch auto +arm_pos fault=controller:arm_pos:update:throw@3 fault=controller:arm_pos:chained_mode:failure@1
+powercut off
+switch force_auto +diff_drive
+switch force_auto +arm_pos
+switch auto +nav
+fault controller:arm_vel:update:error
+switch force_auto +jsb fault=controller:jsb:activate:delay@4
+switch force_auto +arm_ik +jsb -flipper_vel fault=controller:flipper_vel:activate:error@0 fault=controller:arm_vel:activate:failure@3
+configure diff_drive fault=controller:diff_drive:configure:error
+switch force_auto +flipper_vel +flipper_pos -jsb stall
+recover arm
+switch force_auto +jsb
+fault hardware:imu:read:error
+fault hardware:flipper:read:deactivate
+switch strict +odom_pub +arm_ik -nav -nav -diff_drive -odom_pub
+switch force_auto -teleop
+switch auto +arm_pos fault=hardware:arm:error:delay@2 fault=controller:arm_pos:activate:delay@1
+switch force_auto -flipper_pos
+configure base_vel
+switch auto -monitor
+fault controller:teleop:update:throw
+switch auto +flipper_vel
+switch strict +jsb
+switch strict +diff_drive +jsb +odom_pub -diff_drive fault=hardware:imu:prepare:error@3
+switch strict -arm_vel
+switch force_auto +wrist +jsb +base_vel +monitor +nav -jsb -flipper_vel
+unload monitor
+switch auto +flipper_vel
+switch auto -odom_pub
+fault controller:nav:update:throw
+cleanup flipper_pos
+switch force_auto +flipper_pos +jsb -diff_drive -teleop fault=controller:nav:activate:throw@1 fault=hardware:base:perform:throw@1
+fault hardware:arm:write:deactivate
+load odom_pub
+switch strict -arm_pos
+switch force_auto -arm_pos
+switch strict +base_vel
+load arm_vel
+switch strict +flipper_pos fault=controller:wrist:update:throw@3
+cleanup wrist fault=controller:wrist:cleanup:hang
+switch auto -jsb -jsb
+fault hardware:imu:write:error
+powercut on
+fault controller:nav:update:throw
+switch strict -jsb fault=hardware:base:read:error@0
+switch strict -flipper_vel
+switch auto -odom_pub
+powercut off
+recover arm
+switch strict -arm_vel
+fault hardware:flipper:write:error
+fault controller:odom_pub:update:error
+unload whole_body
+recover imu
+fault hardware:imu:read:throw
+recover arm
+load odom_pub
+switch force_auto -arm_vel
+switch force_auto +flipper_vel fault=hardware:flipper:error:error@1
+unload diff_drive
+switch force_auto -arm_ik
+powercut on
+configure nav
+switch strict +odom_pub fault=controller:whole_body:deactivate:delay@4 fault=hardware:imu:error:error@0
+switch force_auto +monitor fault=controller:monitor:update:error@2
+switch force_auto +base_vel +whole_body +flipper_pos fault=hardware:flipper:deactivate:throw@0
+cleanup whole_body
+recover base fault=hardware:base:cleanup:failure
+shutdown fault=hardware:base:deactivate:error

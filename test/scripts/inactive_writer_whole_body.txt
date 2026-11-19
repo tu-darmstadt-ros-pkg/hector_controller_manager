@@ -1,0 +1,3 @@
+# Like inactive_writer_monitor, with whole_body started after arm_pos stopped.
+switch auto -arm_pos
+switch strict +whole_body

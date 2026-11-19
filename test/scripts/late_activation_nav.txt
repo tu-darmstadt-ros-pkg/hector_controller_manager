@@ -1,0 +1,4 @@
+# Like late_activation_wrist for nav over diff_drive.
+switch strict -odom_pub -diff_drive -base_vel
+switch auto +nav fault=controller:nav:activate:late@0 fault=hardware:base:prepare:delay@0
+switch auto +nav expect=accept

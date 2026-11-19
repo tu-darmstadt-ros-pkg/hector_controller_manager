@@ -1,0 +1,4 @@
+# Fault handling of imu runs a late on_error while the shutdown waits. Under a long hang timeout
+# that uses up the shutdown timeout, the shutdown must still stop every controller and hold its
+# interfaces.
+fault hardware:imu:read:error fault=hardware:imu:error:late nowait
