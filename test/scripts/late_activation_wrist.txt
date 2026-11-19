@@ -1,0 +1,5 @@
+# The deadline passes in a late on_activate of a writer, the rollback stops its provider. The late
+# success must end at once, so the writer never counts as active over the stopped provider.
+switch force_auto +nav -arm_vel
+switch force_auto +flipper_vel +wrist fault=controller:wrist:activate:late@0 fault=hardware:arm:prepare:delay@0
+switch auto +arm_vel +wrist expect=accept
