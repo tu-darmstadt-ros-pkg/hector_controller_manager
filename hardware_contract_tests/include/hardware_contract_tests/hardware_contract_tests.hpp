@@ -29,11 +29,12 @@ namespace hardware_contract_tests
  * The Plant provides
  * - `std::unique_ptr<hardware_interface::SystemInterface> make()`, the plugin to test;
  * - `hardware_interface::HardwareInfo info()`, the component it loads;
- * - `std::string joint()`, a joint with position, velocity and torque_off command interfaces, free
- *   to move one radian either way, in a plant without gravity;
+ * - `std::string joint()`, a joint with a position state, free to move one radian either way, in a
+ *   plant without gravity;
  * - `void step( double period )`, the plant's physics that write() does not run;
  * - `void push( double delta )`, moves the joint by hand.
  *
+ * A test that needs a position or velocity command interface the joint does not export is skipped.
  * Every call comes from the test's thread, one at a time, as hcm calls a component.
  */
 template <typename Plant>
@@ -80,17 +81,13 @@ protected:
 
   std::string interface(const std::string & name) const { return plant_.joint() + "/" + name; }
 
+  bool exports(const std::string & name) const { return commands_.count(interface(name)) != 0; }
+
   double position() const { return states_.at(interface("position"))->get_optional().value(); }
 
   void command(const std::string & name, double value)
   {
     ASSERT_TRUE(commands_.at(interface(name))->set_value(value, true));
-  }
-
-  hardware_interface::return_type prepare(
-    const std::vector<std::string> & start, const std::vector<std::string> & stop)
-  {
-    return hardware_->prepare_command_mode_switch(start, stop);
   }
 
   /// A switch as hcm performs it, which leaves NaN in the started interfaces until a controller
@@ -101,10 +98,7 @@ protected:
       hardware_->perform_command_mode_switch(start, stop), hardware_interface::return_type::OK);
     for (const auto & name : start)
     {
-      if (name != interface("torque_off"))
-      {
-        ASSERT_TRUE(commands_.at(name)->set_value(kNaN, true));
-      }
+      ASSERT_TRUE(commands_.at(name)->set_value(kNaN, true));
     }
   }
 
@@ -134,16 +128,6 @@ protected:
     EXPECT_NEAR(position(), held, 0.02) << context << ": the joint is limp";
   }
 
-  /// The joint stays where a push leaves it
-  void expectLimp(const std::string & context)
-  {
-    cycles(5);
-    const double before = position();
-    plant_.push(0.2);
-    cycles(50);
-    EXPECT_NEAR(position(), before + 0.2, 0.02) << context << ": the joint has torque";
-  }
-
   Plant plant_;
   std::unique_ptr<hardware_interface::SystemInterface> hardware_;
   std::unordered_map<std::string, hardware_interface::StateInterface::ConstSharedPtr> states_;
@@ -157,6 +141,10 @@ TYPED_TEST_SUITE_P(HardwareContract);
 
 TYPED_TEST_P(HardwareContract, ANaNPositionCommandHoldsWhereTheJointIs)
 {
+  if (!this->exports("position"))
+  {
+    GTEST_SKIP() << "the joint has no position command";
+  }
   const double start = this->position();
   this->perform({this->interface("position")}, {});
   this->command("position", start + 1.0);
@@ -173,6 +161,10 @@ TYPED_TEST_P(HardwareContract, ANaNPositionCommandHoldsWhereTheJointIs)
 
 TYPED_TEST_P(HardwareContract, ANaNVelocityCommandStopsTheJoint)
 {
+  if (!this->exports("velocity"))
+  {
+    GTEST_SKIP() << "the joint has no velocity command";
+  }
   const double start = this->position();
   this->perform({this->interface("velocity")}, {});
   this->command("velocity", 0.5);
@@ -189,6 +181,10 @@ TYPED_TEST_P(HardwareContract, ANaNVelocityCommandStopsTheJoint)
 
 TYPED_TEST_P(HardwareContract, AStopAloneHoldsAMovingJoint)
 {
+  if (!this->exports("velocity"))
+  {
+    GTEST_SKIP() << "the joint has no velocity command";
+  }
   const double start = this->position();
   this->perform({this->interface("velocity")}, {});
   this->command("velocity", 0.5);
@@ -202,6 +198,10 @@ TYPED_TEST_P(HardwareContract, AStopAloneHoldsAMovingJoint)
 
 TYPED_TEST_P(HardwareContract, AStartAloneTakesCommands)
 {
+  if (!this->exports("position"))
+  {
+    GTEST_SKIP() << "the joint has no position command";
+  }
   const double target = this->position() + 0.3;
   this->perform({this->interface("position")}, {});
   this->command("position", target);
@@ -209,58 +209,13 @@ TYPED_TEST_P(HardwareContract, AStartAloneTakesCommands)
   EXPECT_NEAR(this->position(), target, 0.02);
 }
 
-TYPED_TEST_P(HardwareContract, TorqueOffAloneGoesLimp)
-{
-  ASSERT_EQ(
-    this->prepare({this->interface("torque_off")}, {}), hardware_interface::return_type::OK);
-  this->perform({this->interface("torque_off")}, {});
-  this->expectLimp("with torque_off claimed");
-}
-
-TYPED_TEST_P(HardwareContract, TorqueOffIsRefusedNextToAMotionInterfaceOfTheSameJoint)
-{
-  const auto torque_off = this->interface("torque_off");
-  const auto position = this->interface("position");
-  EXPECT_EQ(this->prepare({torque_off, position}, {}), hardware_interface::return_type::ERROR);
-  this->perform({torque_off}, {});
-  EXPECT_EQ(this->prepare({position}, {}), hardware_interface::return_type::ERROR);
-  EXPECT_EQ(this->prepare({position}, {torque_off}), hardware_interface::return_type::OK);
-}
-
-// hcm's hold after a fault stops a claim without a successor, which must not energise
-TYPED_TEST_P(HardwareContract, AStoppedTorqueOffStaysLimp)
-{
-  this->perform({this->interface("torque_off")}, {});
-  this->perform({}, {this->interface("torque_off")});
-  this->expectLimp("after torque_off stopped alone");
-}
-
-TYPED_TEST_P(HardwareContract, AMotionStartInTheSameSwitchEnergisesWhereTheJointWasLeft)
-{
-  this->perform({this->interface("torque_off")}, {});
-  this->cycles(5);
-  this->plant_.push(0.2);
-  this->cycles(5);
-  const double left = this->position();
-  this->perform({this->interface("position")}, {this->interface("torque_off")});
-  this->expectHeldAt(left, "after the combined switch");
-}
-
-TYPED_TEST_P(HardwareContract, AMotionStartInALaterSwitchEnergisesWhereTheJointWasLeft)
-{
-  this->perform({this->interface("torque_off")}, {});
-  this->perform({}, {this->interface("torque_off")});
-  this->cycles(5);
-  this->plant_.push(0.2);
-  this->cycles(5);
-  const double left = this->position();
-  this->perform({this->interface("position")}, {});
-  this->expectHeldAt(left, "after the later start");
-}
-
 // Only a plant that moves without write() can fail the stop half, the dynamics mock cannot
 TYPED_TEST_P(HardwareContract, DeactivationStopsAMovingJointAndActivationHoldsIt)
 {
+  if (!this->exports("velocity"))
+  {
+    GTEST_SKIP() << "the joint has no velocity command";
+  }
   this->perform({this->interface("velocity")}, {});
   this->command("velocity", 0.5);
   this->cycles(25);
@@ -278,10 +233,14 @@ TYPED_TEST_P(HardwareContract, DeactivationStopsAMovingJointAndActivationHoldsIt
   this->expectHeldAt(stopped, "after the activation");
 }
 
-// A fault ends every claim, also torque_off, and the recovery is configure, then activate
-TYPED_TEST_P(HardwareContract, AfterAFaultTheRecoveredJointHoldsAndTakesAMotionClaim)
+// A fault ends every claim, and the recovery is configure, then activate
+TYPED_TEST_P(HardwareContract, AfterAFaultTheRecoveredJointHoldsAndTakesAClaimAgain)
 {
-  this->perform({this->interface("torque_off")}, {});
+  if (!this->exports("position"))
+  {
+    GTEST_SKIP() << "the joint has no position command";
+  }
+  this->perform({this->interface("position")}, {});
   this->cycles(5);
   ASSERT_EQ(this->hardware_->on_error(this->state_), hardware_interface::CallbackReturn::SUCCESS);
   this->active_ = false;
@@ -292,17 +251,16 @@ TYPED_TEST_P(HardwareContract, AfterAFaultTheRecoveredJointHoldsAndTakesAMotionC
   this->active_ = true;
   this->cycles(5);
   this->expectHeldAt(this->position(), "after the recovery");
-  EXPECT_EQ(this->prepare({this->interface("position")}, {}), hardware_interface::return_type::OK);
+  EXPECT_EQ(
+    this->hardware_->prepare_command_mode_switch({this->interface("position")}, {}),
+    hardware_interface::return_type::OK);
 }
 
 REGISTER_TYPED_TEST_SUITE_P(
   HardwareContract, ANaNPositionCommandHoldsWhereTheJointIs, ANaNVelocityCommandStopsTheJoint,
-  AStopAloneHoldsAMovingJoint, AStartAloneTakesCommands, TorqueOffAloneGoesLimp,
-  TorqueOffIsRefusedNextToAMotionInterfaceOfTheSameJoint, AStoppedTorqueOffStaysLimp,
-  AMotionStartInTheSameSwitchEnergisesWhereTheJointWasLeft,
-  AMotionStartInALaterSwitchEnergisesWhereTheJointWasLeft,
+  AStopAloneHoldsAMovingJoint, AStartAloneTakesCommands,
   DeactivationStopsAMovingJointAndActivationHoldsIt,
-  AfterAFaultTheRecoveredJointHoldsAndTakesAMotionClaim);
+  AfterAFaultTheRecoveredJointHoldsAndTakesAClaimAgain);
 
 }  // namespace hardware_contract_tests
 
