@@ -79,9 +79,8 @@ void Diagnostics::activity(diagnostic_updater::DiagnosticStatusWrapper & stat)
   }
   // A stuck cycle runs no update, so nothing stops, not even on an e-stop. gz writes in the step
   // after its read and update, so an embedded loop holds a cycle open across a whole gz step.
-  if (
-    const auto open = supervisor_.rt().open_cycle(Clock::now());
-    supervisor_.runs_control_loop() && open > supervisor_.config().hang_timeout)
+  if (const auto open = supervisor_.rt().open_cycle(Clock::now());
+      supervisor_.runs_control_loop() && open > supervisor_.config().hang_timeout)
   {
     stat.mergeSummary(
       diagnostic_msgs::msg::DiagnosticStatus::ERROR,

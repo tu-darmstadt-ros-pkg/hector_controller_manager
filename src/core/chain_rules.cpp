@@ -194,9 +194,8 @@ Names providers_written(const InterfaceIndex & index, const Claims & claims)
   Names providers;
   for (const auto & interface : claims.command)
   {
-    if (
-      const auto * owner = index.command(interface);
-      owner && owner->kind == InterfaceOwner::Kind::Reference)
+    if (const auto * owner = index.command(interface);
+        owner && owner->kind == InterfaceOwner::Kind::Reference)
     {
       providers.insert(owner->owner);
     }

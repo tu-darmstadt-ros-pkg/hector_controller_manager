@@ -453,9 +453,8 @@ std::string Supervisor::absorb()
     {
       continue;
     }
-    if (
-      const auto kind = entities_.controllers.at(name)->stop_kind(controller.activation);
-      kind != StopKind::None)
+    if (const auto kind = entities_.controllers.at(name)->stop_kind(controller.activation);
+        kind != StopKind::None)
     {
       failed.insert(name);
       stops.emplace(name, kind);
@@ -478,9 +477,8 @@ std::string Supervisor::absorb()
     for (auto & [name, cause] : stop_causes(model_, desired_, seeds, faulted))
     {
       // Keyed by the model activation the lookups pass, a pending restart desires a higher one
-      if (
-        const auto & controller = model_.controllers.at(name);
-        controller.state == Lifecycle::Active)
+      if (const auto & controller = model_.controllers.at(name);
+          controller.state == Lifecycle::Active)
       {
         stop_causes_[name] = {controller.activation, std::move(cause)};
       }
@@ -890,9 +888,8 @@ Response Supervisor::do_switch(const core::SwitchRequest & request, Clock::time_
   // Validation gets time of its own, because a component that does not answer it is quarantined
   reconcile(deadline - MIN_VALIDATION_TIME);
   // A switch is planned on a settled model, only a quarantine may still block it
-  if (
-    const core::Step next = core::next_step(model_, desired_);
-    !std::holds_alternative<core::Done>(next) && !std::holds_alternative<core::Blocked>(next))
+  if (const core::Step next = core::next_step(model_, desired_);
+      !std::holds_alternative<core::Done>(next) && !std::holds_alternative<core::Blocked>(next))
   {
     return RequestQueue::busy();
   }

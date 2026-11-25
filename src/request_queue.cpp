@@ -47,8 +47,8 @@ Response RequestQueue::call(Work work, Clock::duration timeout, Clock::duration 
   if (future.wait_until(request->deadline + grace) == std::future_status::timeout)
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (
-      const auto it = std::find(requests_.begin(), requests_.end(), request); it != requests_.end())
+    if (const auto it = std::find(requests_.begin(), requests_.end(), request);
+        it != requests_.end())
     {
       requests_.erase(it);
       return busy();

@@ -226,9 +226,8 @@ public:
   CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
   {
     const InFlight running(observed_.running);
-    if (
-      const auto result = observed_.failing_activation.exchange(CallbackReturn::SUCCESS);
-      result != CallbackReturn::SUCCESS)
+    if (const auto result = observed_.failing_activation.exchange(CallbackReturn::SUCCESS);
+        result != CallbackReturn::SUCCESS)
     {
       // A command of an activation that never runs
       (void)command_interfaces_[0].set_value(observed_.next_epoch.fetch_add(1) * EPOCH + 1.0);
