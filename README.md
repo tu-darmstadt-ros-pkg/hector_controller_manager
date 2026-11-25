@@ -118,7 +118,8 @@ A released command interface holds NaN, and so does every reference without an a
 hardware is expected to hold a joint whose command is NaN, so a joint stops instead of keeping the
 last command of a controller that ended. When one controller takes a joint over from another, the
 hardware sees at most one mode switch and never a command of the old controller after the new one
-started.
+started. [hardware_contract_tests](hardware_contract_tests/README.md) checks a hardware plugin
+against these expectations.
 
 A fault only stops things. A failing controller stops together with everything chained to it, and a
 hardware fault stops every controller that uses the component. Nothing is reactivated because of a
