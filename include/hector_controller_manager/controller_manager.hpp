@@ -41,6 +41,7 @@
 #include "hector_controller_manager/estop_monitor.hpp"
 #include "hector_controller_manager/execution_time_registry.hpp"
 #include "hector_controller_manager/executor_barrier.hpp"
+#include "hector_controller_manager/introspection.hpp"
 #include "hector_controller_manager/plugin_loader.hpp"
 #include "hector_controller_manager/request_threads.hpp"
 #include "hector_controller_manager/startup.hpp"
@@ -82,6 +83,9 @@ public:
   /// Brings everything down as on process exit. Returns false if something did not stop cleanly,
   /// also in an earlier call.
   bool shutdown();
+  /// The controllers that are active, also those whose call still runs past its deadline, which
+  /// the list services report as deactivating.
+  std::vector<std::string> active_controllers() const;
 
   /// Service callbacks, public so tests read exactly what the services return.
   using ListControllers = controller_manager_msgs::srv::ListControllers;
@@ -209,6 +213,7 @@ private:
   std::unique_ptr<Diagnostics> diagnostics_;
   /// Shuts the controller manager down while the context is still valid, removed on destruction.
   rclcpp::PreShutdownCallbackHandle pre_shutdown_;
+  std::unique_ptr<Introspection::Member> introspection_;
 
   /// Last, it runs threads that use the members above.
   std::unique_ptr<Supervisor> supervisor_;

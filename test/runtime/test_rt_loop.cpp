@@ -163,5 +163,34 @@ TEST_F(RtLoopTest, a_hold_stops_the_command_claimers_of_a_later_plan)
   b->set_plugin(nullptr);
 }
 
+// The e-stop engages at construction until its topics sent a message, usually released before the
+// first plan. A controller started after that release runs, even when RT updates no plan before.
+TEST_F(RtLoopTest, an_engage_released_before_the_first_plan_stops_no_later_start)
+{
+  std::atomic<int> updates{0};
+  auto b = std::make_shared<ControllerRuntime>("b", "test/Counting", std::make_shared<IoGate>());
+  b->set_plugin(testing::initialized(std::make_shared<Counting>(updates), "b"));
+
+  Doorbell bell;
+  PlanSlot slot(bell);
+  RtLoop loop(slot, bell, std::chrono::milliseconds(100));
+  Plan p1;
+  p1.generation = 1;
+  p1.controllers.push_back({b.get(), 1, {{0, 1}, {0, 0}}, true});
+  p1.scope_controllers.push_back(0);
+
+  const rclcpp::Time time(0, 0, RCL_STEADY_TIME);
+  const rclcpp::Duration period(0, 1000000);
+  loop.set_estop(true);
+  loop.set_estop(false);
+  slot.publish(&p1);
+  loop.update(time, period);
+  EXPECT_EQ(updates.load(), 1) << "b was stopped by an engage released before it started";
+  EXPECT_EQ(b->estop_activation.load(), 0u);
+  slot.publish(nullptr);
+  loop.read(time, period);
+  b->set_plugin(nullptr);
+}
+
 }  // namespace
 }  // namespace hector_controller_manager::runtime

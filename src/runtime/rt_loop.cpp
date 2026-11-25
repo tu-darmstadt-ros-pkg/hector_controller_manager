@@ -14,7 +14,7 @@
 
 #include "hector_controller_manager/runtime/rt_loop.hpp"
 
-#include "hardware_interface/introspection.hpp"
+#include "hector_controller_manager/introspection.hpp"
 #include "hector_controller_manager/runtime/controller_runtime.hpp"
 #include "hector_controller_manager/runtime/hardware_runtime.hpp"
 
@@ -40,8 +40,7 @@ RtLoop::RtLoop(PlanSlot & slot, Doorbell & supervisor, Clock::duration hang_time
 : slot_(slot),
   supervisor_(supervisor),
   hang_timeout_(hang_timeout),
-  // Looked up once, the lookup locks
-  introspection_(pal_statistics::getRegistry(hardware_interface::DEFAULT_REGISTRY_KEY))
+  introspection_(Introspection::get())
 {
 }
 
@@ -78,31 +77,37 @@ void RtLoop::check_hardware(const Plan & plan) noexcept
 
 void RtLoop::sample_introspection(const Plan & plan) noexcept
 {
-  if (!introspection_ || !introspection_gate_->rt_enter())
+  // The gate has one RT bit, so only the sole manager's RT may try it, which owner_in tells
+  if (!introspection_ || introspection_->gate().owner_in() || !introspection_->gate().rt_enter())
   {
     return;
   }
-  size_t idle = 0;
-  while (idle < plan.hardware.size() && plan.hardware[idle].runtime->rt_enter_idle())
+  if (introspection_gate_->rt_enter())
   {
-    ++idle;
+    size_t idle = 0;
+    while (idle < plan.hardware.size() && plan.hardware[idle].runtime->rt_enter_idle())
+    {
+      ++idle;
+    }
+    if (idle == plan.hardware.size())
+    {
+      introspection_->registry().publishAsync();
+    }
+    for (size_t i = 0; i < idle; ++i)
+    {
+      plan.hardware[i].runtime->rt_leave_idle();
+    }
+    introspection_gate_->rt_leave();
   }
-  if (idle == plan.hardware.size())
-  {
-    introspection_->publishAsync();
-  }
-  for (size_t i = 0; i < idle; ++i)
-  {
-    plan.hardware[i].runtime->rt_leave_idle();
-  }
-  introspection_gate_->rt_leave();
+  introspection_->gate().rt_leave();
 }
 
 void RtLoop::flush_introspection()
 {
-  if (introspection_)
+  if (introspection_ && !introspection_->gate().owner_in() && introspection_->gate().rt_enter())
   {
-    introspection_->publish();
+    introspection_->registry().publish();
+    introspection_->gate().rt_leave();
   }
 }
 

@@ -22,22 +22,37 @@
 
 namespace hector_controller_manager
 {
+namespace
+{
+std::shared_ptr<pal_statistics::StatisticsRegistry> own_registry(rclcpp::Node & node)
+{
+  const std::string key =
+    node.get_node_topics_interface()->resolve_topic_name(hardware_interface::CM_STATISTICS_TOPIC);
+  pal_statistics::deleteRegistry(key);
+  auto registry = pal_statistics::getOrCreateRegistry(
+    node.get_node_parameters_interface(), node.get_node_topics_interface(),
+    node.get_node_logging_interface(), node.get_node_clock_interface(),
+    hardware_interface::CM_STATISTICS_TOPIC, key);
+  registry->startPublishThread();
+  return registry;
+}
+}  // namespace
+
 ExecutionTimeRegistry::ExecutionTimeRegistry(
-  std::string total, std::function<double()> cycle_seconds)
-: total_(std::move(total)), cycle_seconds_(std::move(cycle_seconds))
+  rclcpp::Node & node, std::string total, std::function<double()> cycle_seconds)
+: total_(std::move(total)), cycle_seconds_(std::move(cycle_seconds)), registry_(own_registry(node))
 {
 }
 
 void ExecutionTimeRegistry::add(const Status & status)
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto registry = pal_statistics::getRegistry(hardware_interface::CM_STATISTICS_KEY);
   // Microseconds like upstream ros2_control, which the rqml statistics panel expects
   const auto add = [&](const std::string & name, std::function<double()> seconds)
   {
     if (registered_.insert(name).second)
     {
-      registry->registerFunction(name, [seconds = std::move(seconds)] { return seconds() * 1e6; });
+      registry_->registerFunction(name, [seconds = std::move(seconds)] { return seconds() * 1e6; });
     }
   };
   // The runtime may be unloaded before a sample
@@ -74,10 +89,9 @@ void ExecutionTimeRegistry::add(const Status & status)
 void ExecutionTimeRegistry::remove_all()
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto registry = pal_statistics::getRegistry(hardware_interface::CM_STATISTICS_KEY);
   for (const auto & name : registered_)
   {
-    registry->unregisterVariable(name);
+    registry_->unregisterVariable(name);
   }
 }
 

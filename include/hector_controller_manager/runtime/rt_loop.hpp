@@ -26,10 +26,10 @@
 #include "rclcpp/duration.hpp"
 #include "rclcpp/time.hpp"
 
-namespace pal_statistics
+namespace hector_controller_manager
 {
-class StatisticsRegistry;
-}  // namespace pal_statistics
+class Introspection;
+}  // namespace hector_controller_manager
 
 namespace hector_controller_manager::runtime
 {
@@ -46,12 +46,15 @@ public:
   void write(const rclcpp::Time & time, const rclcpp::Duration & period) noexcept;
 
   /// Any thread. Every update while engaged and the first one after an engage stop every controller
-  /// of the plan the e-stop stops, so an engage shorter than a cycle stops them too.
+  /// of the plan the e-stop stops, so an engage shorter than a cycle stops them too. An engage
+  /// while no plan is published sets no pending bit, as no controller ran that it could miss.
   void set_estop(bool engaged) noexcept
   {
     if (engaged)
     {
-      estop_.fetch_or(ENGAGED | PENDING, std::memory_order_release);
+      // The first plan holds no controller, so a publish racing this check starts nothing
+      const uint8_t bits = slot_.has_plan() ? ENGAGED | PENDING : ENGAGED;
+      estop_.fetch_or(bits, std::memory_order_release);
     }
     else
     {
@@ -73,6 +76,7 @@ public:
 
   /// Off RT before the first plan, while no owner runs a plugin call. The registry queues only as
   /// many enables and disables as values are registered and applies them only when it samples.
+  /// Skipped while another manager lives, whose writers may run.
   void flush_introspection();
 
   /// Held by a controller's owner for every lifecycle call, which may write what the controller
@@ -96,15 +100,15 @@ private:
   /// Written by RT only, sampled by the diagnostics.
   std::atomic<double> cycle_seconds_{0.0};
   static constexpr uint8_t ENGAGED = 1;
-  /// Set by an engage, cleared by the update that acts on it.
+  /// Set by an engage while a plan is published, cleared by the update that acts on it.
   static constexpr uint8_t PENDING = 2;
   /// Set by `stop_command_claimers`, never cleared, so a plan published later is stopped too.
   static constexpr uint8_t HELD = 4;
   /// Released by the e-stop listener and the supervisor, acquired by RT at every update, by the
   /// latch and by the diagnostics. RT publishes nothing through it.
   std::atomic<uint8_t> estop_{0};
-  /// Null while no controller manager initialized it.
-  const std::shared_ptr<pal_statistics::StatisticsRegistry> introspection_;
+  /// Null while no controller manager joined it.
+  Introspection * const introspection_;
   const std::shared_ptr<IoGate> introspection_gate_ = std::make_shared<IoGate>();
 };
 

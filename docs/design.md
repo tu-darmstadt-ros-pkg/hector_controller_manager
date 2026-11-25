@@ -33,7 +33,8 @@ from the parameter or the first message on its topic, and a changing description
 | `ControllerManager` | ROS node, services, topics, parameters, status snapshot | executor threads |
 | `Startup` | the startup configuration at the bring up and again after an e-stop release | startup thread, request threads |
 | `Diagnostics` | the activity and scheduling diagnostics with the cycle counters of each component | executor threads |
-| `ExecutionTimeRegistry` | the execution times registered on `~/statistics` | executor threads |
+| `ExecutionTimeRegistry` | the execution times registered on `~/statistics`, a registry per manager | executor threads |
+| `Introspection` | the process-wide introspection registry, its node and the process gate | constructors, RT |
 | `ExecutorBarrier` | confirms that the executor dropped a removed controller node | controller owners |
 | `PluginLoader` | pluginlib loaders of controllers and hardware, pins their libraries | owners, executor threads |
 | `EStopMonitor` | e-stop topics, their publishers and deadline, the cause | e-stop thread |
@@ -181,19 +182,43 @@ fault once per generation.
 
 ### Introspection
 
-RT samples the registry of `~/introspection_data` in `write`, after the sync writes and before the
-triggers, with `publishAsync`, which only try locks. It samples only if it enters the `IoGate` of
-every component, finds every async owner free as before a copy, and enters the introspection gate,
-which every controller owner holds for its lifecycle calls and for creating and destroying its
-plugin. The `IoGate` counts its owners, so all controller owners share one. Otherwise the cycle
-publishes no sample. The plugins enable and disable their values inside these calls, so a sample
-never sees a value while its writer runs. Hardware plugins are created before the first plan and
-destroyed after the last, when RT samples nothing.
+Controllers and hardware register their values in the registry under the key that
+hardware_interface fixes, so `Introspection` holds one registry per process. Its node
+`ros2_control`, created in the namespace of the first manager, publishes it on
+`ros2_control/introspection_data`. Neither is ever destroyed, so no manager's end leaves the others
+without the publisher. The process therefore counts as leaking, and `exit_process` skips the static
+destructors that would race the publish thread. Each manager has a statistics registry of its own
+instead, keyed by its resolved `~/statistics`. It outlives its manager until a later manager of the
+same name replaces it.
+
+RT samples the registry in `write`, after the sync writes and before the triggers, with
+`publishAsync`, which only try locks. It samples only if it enters the process gate of
+`Introspection` and the `IoGate` of every component, finds every async owner free as before a copy,
+and enters the introspection gate, which every controller owner holds for its lifecycle calls and
+for creating and destroying its plugin. The `IoGate` counts its owners, so all controller owners
+share one. Otherwise the cycle publishes no sample. The plugins enable and disable their values
+inside these calls, so a sample never sees a value while its writer runs. Hardware plugins are
+created before the first plan and destroyed after the last, when RT samples nothing.
+
+A sample reads the values of every manager of the process, and the RT loop of one manager cannot
+hold off the RT loop or the owners of another without waiting. The process gate is therefore held
+as owner while more than one manager lives, and several managers in one process publish no sample.
+Sampling every 50 ms off RT would publish their values, but read them while their writers run. A
+manager joins before it creates a plugin, waiting for a sample in flight, and leaves after its
+plugins are gone. The process gate has a single RT bit, so RT tries it only while no owner holds it,
+which leaves the sole manager's RT and, before its first plan, its flush as the only parties. A
+plugin leaked by a manager that is gone may still write an enabled value while the remaining
+manager samples, which this rule does not cover. The node takes `use_sim_time` and the context of
+the first manager. pal_statistics ends the publish thread once the default context is shut down, so
+an embedding process that returns from `main` must shut it down first, as static destructors would
+race the thread otherwise, and a manager created after that publishes no introspection.
+
 Registrations raise the capacity of the registry's queue of enables and disables to the most
 values registered at once, and the registry fills it with its own values when it is created, so
 until a sample drains it every enable is lost. The supervisor therefore flushes it before the bring
-up, while no owner runs a call. More of them between two samples than that capacity lose the
-excess, which leaves a value shown or hidden, but never read while it is written.
+up, while no owner runs a call, under the process gate, so not while another manager lives. More of
+them between two samples than that capacity lose the excess, which leaves a value shown or hidden,
+but never read while it is written.
 
 ## Invariants
 
@@ -291,20 +316,21 @@ come from a publisher that stays, a one shot false releases only for the grace.
   SCHED_FIFO thread may share a core with it, a FIFO hog delayed an engage by up to about 900 ms in
   a measurement. An engage sets an engaged and a pending bit, which
   RT reads at every update. A release clears only the engaged bit. The update that reads the pending
-  bit clears it, so an engage shorter than a cycle stops as well. An update without a plan ends
-  before it reads the bits, so the pending bit stays until the first update with a plan. While
-  either bit is set, RT stops every running controller of the adopted plan that claims command
-  interfaces and is not protected. It stops them through the failure path of an update error. Their
-  failure scope is marked failed in that activation, and their hardware interfaces are held by their
-  owners. So the stop happens in the next cycle, also while the supervisor works on a request. The
-  supervisor absorbs it like a fault. Desired shrinks, the controllers are deactivated and their
-  handles get NaN. The failure scope follows the chain rules. A protected controller chained to a
-  stopped one stops with it, so protection does not hold there. A switch that activates such a chain
-  logs a warning that names it. Broadcasters without command interfaces keep running. Since RT
-  stops, a soft e-stop needs a cycling loop, and RT stuck in a plugin call stops nothing. Once a
-  cycle of the loop of ros2_control_node stays open longer than the hang timeout the "Controller
-  Manager Activity" diagnostic reports ERROR. An embedded loop is not reported, gz writes in the
-  step after its read and update, so its cycles stay open across a whole gz step.
+  bit clears it, so an engage shorter than a cycle stops as well. An engage while no plan is
+  published sets only the engaged bit, as no controller ran that it could miss, so a controller
+  started after the release at startup keeps running. While either bit is set, RT stops every
+  running controller of the adopted plan that claims command interfaces and is not protected. It
+  stops them through the failure path of an update error. Their failure scope is marked failed in
+  that activation, and their hardware interfaces are held by their owners. So the stop happens in
+  the next cycle, also while the supervisor works on a request. The supervisor absorbs it like a
+  fault. Desired shrinks, the controllers are deactivated and their handles get NaN. The failure
+  scope follows the chain rules. A protected controller chained to a stopped one stops with it, so
+  protection does not hold there. A switch that activates such a chain logs a warning that names it.
+  Broadcasters without command interfaces keep running. Since RT stops, a soft e-stop needs a
+  cycling loop, and RT stuck in a plugin call stops nothing. Once a cycle of the loop of
+  ros2_control_node stays open longer than the hang timeout the "Controller Manager Activity"
+  diagnostic reports ERROR. An embedded loop is not reported, gz writes in the step after its read
+  and update, so its cycles stay open across a whole gz step.
 - **Latch.** While engaged, a switch that would start a controller that claims command interfaces
   and is not protected is rejected with the reason. Starting a protected controller is allowed, for
   example a torque off controller during a soft e-stop. A switch accepted just before an engage

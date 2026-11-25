@@ -21,11 +21,16 @@ as deactivating, until the call returns. So is an active controller that RT stop
 
 ## Topics
 
+**Changed:** the introspection moved from `~/introspection_data` of the manager, for example
+`/controller_manager/introspection_data`, to `ros2_control/introspection_data` in the namespace of
+the first manager of the process, `/ros2_control/introspection_data` in the root namespace.
+Subscribers of the old topic must change it.
+
 | Topic | Content |
 |---|---|
 | `~/activity` | `ControllerManagerActivity` with the state of every controller and component, on every change, reliable and transient local |
 | `~/statistics/names`, `~/statistics/values` | Execution times in µs every 50 ms, the cycle as `<node>.total_time`, each controller update and each component read and write |
-| `~/introspection_data/names`, `~/introspection_data/values` | Values that controllers and plugins register, without the interface values |
+| `<ns>/ros2_control/introspection_data/names`, `.../values` | Values that controllers and plugins register, without the interface values. Published by the process-wide node `ros2_control` in the namespace `<ns>` of the first controller manager of the process, sampled only while one manager lives in it |
 
 ## Diagnostics
 

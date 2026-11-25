@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include "hardware_interface/introspection.hpp"
 #include "hector_controller_manager/core/names.hpp"
 #include "hector_controller_manager/parameters.hpp"
 #include "hector_controller_manager/runtime/thrown.hpp"
@@ -119,7 +118,8 @@ ControllerManager::ControllerManager(
   executor_(std::move(executor)),
   hardware_factory_(std::move(hardware_factory)),
   execution_times_(
-    std::string(get_name()) + ".total_time", [this] { return supervisor_->rt().cycle_seconds(); })
+    *this, std::string(get_name()) + ".total_time",
+    [this] { return supervisor_->rt().cycle_seconds(); })
 {
   if (!executor_)
   {
@@ -134,14 +134,8 @@ ControllerManager::ControllerManager(
   const SupervisorConfig config = read_parameters(estop_topics, startup);
   activity_ = create_publisher<controller_manager_msgs::msg::ControllerManagerActivity>(
     "~/activity", rclcpp::QoS(1).reliable().transient_local());
-  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-    this, hardware_interface::CM_STATISTICS_TOPIC, hardware_interface::CM_STATISTICS_KEY);
-  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::CM_STATISTICS_KEY);
   // Before the supervisor, whose control loop samples it
-  INITIALIZE_ROS2_CONTROL_INTROSPECTION_REGISTRY(
-    this, hardware_interface::DEFAULT_INTROSPECTION_TOPIC,
-    hardware_interface::DEFAULT_REGISTRY_KEY);
-  START_ROS2_CONTROL_INTROSPECTION_PUBLISHER_THREAD(hardware_interface::DEFAULT_REGISTRY_KEY);
+  introspection_ = Introspection::join(*this);
   supervisor_ = std::make_unique<Supervisor>(
     config, *this, get_logger(),
     [this](std::shared_ptr<const Status> status) { on_status(status); });
@@ -163,9 +157,8 @@ ControllerManager::ControllerManager(
     *this, std::move(estop_topics), [this](bool engaged, const std::string & cause, bool changed)
     { on_estop(engaged, cause, changed); });
   // Sampled off RT from atomics, so the statistics never race with or block the control loop
-  statistics_timer_ = create_wall_timer(
-    std::chrono::milliseconds(50),
-    [] { PUBLISH_ROS2_CONTROL_INTROSPECTION_DATA_ASYNC(hardware_interface::CM_STATISTICS_KEY); });
+  statistics_timer_ =
+    create_wall_timer(std::chrono::milliseconds(50), [this] { execution_times_.publish(); });
   diagnostics_ = std::make_unique<Diagnostics>(
     *this, *supervisor_, callbacks_mutex_, closed_, initialization_failed_);
   list_group_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -234,8 +227,8 @@ ControllerManager::~ControllerManager()
   statistics_timer_.reset();
   execution_times_.remove_all();
   supervisor_.reset();
-  // The plugins are gone, a controller manager created next gets a registry of its own node
-  pal_statistics::deleteRegistry(hardware_interface::DEFAULT_REGISTRY_KEY);
+  // The plugins are gone, so another manager's RT may sample again
+  introspection_.reset();
 }
 
 std::shared_ptr<rclcpp::Executor> ControllerManager::own_executor()
@@ -313,6 +306,19 @@ SupervisorConfig ControllerManager::read_parameters(
 }
 
 bool ControllerManager::is_initialized() const { return supervisor_->status()->initialized; }
+
+std::vector<std::string> ControllerManager::active_controllers() const
+{
+  std::vector<std::string> active;
+  for (const auto & controller : supervisor_->status()->controllers)
+  {
+    if (controller.model.state == Lifecycle::Active)
+    {
+      active.push_back(controller.name);
+    }
+  }
+  return active;
+}
 
 void ControllerManager::start_initialize(const std::string & robot_description)
 {

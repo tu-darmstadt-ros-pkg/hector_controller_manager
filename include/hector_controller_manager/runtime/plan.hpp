@@ -98,6 +98,8 @@ public:
 
   /// Supervisor side.
   void publish(const Plan * plan) noexcept;
+  /// Any thread. False while no plan is published, when RT runs no controller.
+  bool has_plan() const noexcept { return published_.load(std::memory_order_seq_cst) != nullptr; }
   /// Until no RT call runs with a plan older than the generation. False at the deadline.
   [[nodiscard]] bool wait_quiescent(uint64_t generation, Clock::time_point deadline) noexcept;
   /// Until RT finished an update with the generation or a newer one. False at the deadline, or
