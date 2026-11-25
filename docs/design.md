@@ -630,7 +630,7 @@ reset on activation stays the primary mechanism.
 - `test_controller_manager`, `test_services`, `test_autostart` and `test_signals` test the node,
   its services and its shutdown on SIGINT and SIGTERM.
 - `test_suite_cm` runs the common test suite `cm_test_suite`, and `test_suite_cm_all_async` runs it
-  with every component async. `replay_<script>` replays each recorded failure in `test/scripts/`.
+  with every component async. `replay_<script>` replays each recorded failure in `hector_controller_manager/test/scripts/`.
 
 Debug, ASan and TSan builds are checked builds (`runtime::CHECKED_BUILD`). They assert the thread
 role of every entry point and the preconditions stated in the code, and abort on a broken invariant
