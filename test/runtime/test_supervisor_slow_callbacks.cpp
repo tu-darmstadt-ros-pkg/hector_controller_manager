@@ -616,9 +616,8 @@ TEST_F(SupervisorSlowCallbacks, a_hung_unload_does_not_call_a_destroyed_host)
         fail("precondition: load and configure failed");
       }
       observed_.shutdown_gate.close();
-      if (
-        const auto unloaded = supervisor_->unload("a");
-        unloaded.ok || unloaded.message.find("quarantined") == std::string::npos)
+      if (const auto unloaded = supervisor_->unload("a");
+          unloaded.ok || unloaded.message.find("quarantined") == std::string::npos)
       {
         fail("the unload was not given up");
       }

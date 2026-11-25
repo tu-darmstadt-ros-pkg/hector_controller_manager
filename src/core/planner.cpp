@@ -370,10 +370,9 @@ StartupSelection select_startup(
     {
       return "e-stop engaged by " + *estop_cause;
     }
-    if (
-      std::any_of(
-        command.begin(), command.end(),
-        [&](const std::string & interface) { return held.count(key(interface)); }))
+    if (std::any_of(
+          command.begin(), command.end(),
+          [&](const std::string & interface) { return held.count(key(interface)); }))
     {
       return "a running controller claims its joint or reference";
     }

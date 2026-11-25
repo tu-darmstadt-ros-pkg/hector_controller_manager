@@ -616,11 +616,10 @@ private:
         return true;
       }
       // Only a hardware state request may bring a faulted component back up
-      if (
-        const auto * hw = std::get_if<step::Hardware>(&step);
-        hw && run.faulted.count(hw->hardware) &&
-        (hw->transition == step::HardwareTransition::Configure ||
-         hw->transition == step::HardwareTransition::Activate))
+      if (const auto * hw = std::get_if<step::Hardware>(&step);
+          hw && run.faulted.count(hw->hardware) &&
+          (hw->transition == step::HardwareTransition::Configure ||
+           hw->transition == step::HardwareTransition::Activate))
       {
         fail(hw->hardware + " rises above its fault target: " + describe(step));
       }
@@ -630,10 +629,10 @@ private:
         return false;
       }
       // A pending fault takes effect once the switch runs its handling
-      if (
-        const auto * hw = std::get_if<step::Hardware>(&step);
-        hw && injection.kind == Failure::FaultPending &&
-        hw->hardware == std::next(model.hardware.begin(), static_cast<long>(injection.which))->first)
+      if (const auto * hw = std::get_if<step::Hardware>(&step);
+          hw && injection.kind == Failure::FaultPending &&
+          hw->hardware ==
+            std::next(model.hardware.begin(), static_cast<long>(injection.which))->first)
       {
         run.struck = true;
       }
@@ -788,9 +787,8 @@ private:
           (valid ? std::get<Rejection>(planned).reason : text(target)));
       }
     }
-    if (
-      const auto * rejection = std::get_if<Rejection>(&planned);
-      rejection && request.strictness == Strictness::Auto)
+    if (const auto * rejection = std::get_if<Rejection>(&planned);
+        rejection && request.strictness == Strictness::Auto)
     {
       const Names target = merged(without(active, request.deactivate), request.activate);
       const Names closure = provider_closure(before, target);
@@ -818,8 +816,8 @@ private:
         {
           guarded.controllers.at(name).is_protected = true;
         }
-        if (
-          std::holds_alternative<SwitchPlan>(plan_switch(guarded, plan->desired.hardware, request)))
+        if (std::holds_alternative<SwitchPlan>(
+              plan_switch(guarded, plan->desired.hardware, request)))
         {
           fail("stopped protected controllers implicitly: " + text(implicit));
         }

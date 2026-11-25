@@ -204,9 +204,8 @@ TEST(Reconciler, chained_mode_is_set_before_the_user_activates)
   std::optional<size_t> chained;
   for (size_t i = 0; i < steps.size(); ++i)
   {
-    if (
-      const auto * set = std::get_if<step::SetChained>(&steps[i]);
-      set && set->controller == "flipper_pos" && set->chained)
+    if (const auto * set = std::get_if<step::SetChained>(&steps[i]);
+        set && set->controller == "flipper_pos" && set->chained)
     {
       chained = i;
     }

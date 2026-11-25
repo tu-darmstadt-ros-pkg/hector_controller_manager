@@ -337,9 +337,9 @@ protected:
       estop_seen_ = loop_.cycles();
     }
     SupervisorRig::cycle(time, period);
-    if (
-      const auto * watched = watched_.load();
-      watched && stopped_at_ < 0 && watched->failed_activation.load() == watched_activation_.load())
+    if (const auto * watched = watched_.load();
+        watched && stopped_at_ < 0 &&
+        watched->failed_activation.load() == watched_activation_.load())
     {
       stopped_at_ = loop_.cycles() + 1;
     }
