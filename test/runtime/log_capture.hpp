@@ -63,6 +63,16 @@ public:
       [&](const std::string & line) { return line.find(text) != std::string::npos; });
   }
 
+  /// The first captured line that contains `text`, empty if none does.
+  std::string first(const std::string & text) const
+  {
+    std::lock_guard<std::mutex> lock(mutex());
+    const auto line = std::find_if(
+      lines().begin(), lines().end(),
+      [&](const std::string & candidate) { return candidate.find(text) != std::string::npos; });
+    return line == lines().end() ? std::string() : *line;
+  }
+
   /// Every captured line, for the message of a failed expectation.
   std::string text() const
   {

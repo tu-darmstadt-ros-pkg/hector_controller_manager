@@ -46,6 +46,7 @@ add_library(hector_controller_manager SHARED
   src/execution_time_registry.cpp
   src/executor_barrier.cpp
   src/hardware_preparation.cpp
+  src/introspection.cpp
   src/leak.cpp
   src/node.cpp
   src/plugin_loader.cpp

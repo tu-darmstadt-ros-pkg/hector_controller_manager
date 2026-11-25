@@ -49,7 +49,9 @@ runtime is not supported, and a failed initialization needs a restart. The contr
 appear only after a successful initialization, diagnostics and `~/activity` tell waiting from
 failed. The library class
 `hector_controller_manager::ControllerManager` can also be embedded, for example by gz_ros2_control,
-which passes its own executor and a hardware factory.
+which passes its own executor and a hardware factory. Several managers of different names can live
+in one process, each with its own `~/statistics`. `active_controllers()` lists the active
+controllers, also those whose call still runs past its deadline.
 
 On SIGINT the manager first waits for the request in flight, such as a hardware activation spending
 bus timeouts, and then deactivates and shuts down the hardware. ros2 launch sends SIGKILL after its
@@ -264,13 +266,19 @@ that RT stopped, by a failure, a fault or the e-stop, until its `on_deactivate` 
 component with a fault, such as a hang, until its `on_error` ran. The execution times on
 `~/statistics` are in microseconds like upstream.
 
-`~/introspection_data` carries the values that active controllers and hardware plugins register,
-as upstream, but not the values of the interfaces. RT samples them once per cycle and only while no
-thread that writes them runs, so a cycle in which a controller is in a lifecycle call, a component
-in a plugin call or an asynchronous component still in its cycle publishes no sample. A controller
-or component hung in a plugin call stops all samples until it is gone. Values a plugin writes from
-threads of its own or from callbacks of its node, which run on the manager's executor, are not
-excluded. The registry is one per process, so it serves one controller manager per process.
+**The introspection topic changed:** `ros2_control/introspection_data` in the namespace of the first
+controller manager of the process, `/ros2_control/introspection_data` by default, replaces
+`~/introspection_data` of the manager, such as `/controller_manager/introspection_data`. It carries
+the values that active controllers and hardware plugins register, as upstream, but not the values
+of the interfaces. hardware_interface fixes the key of their registry, so it is one per process.
+A node of its own, `ros2_control`, publishes it, so it outlives every manager of the process. RT
+samples it once per cycle and only while no thread that writes it runs, so a cycle in which a
+controller is in a lifecycle call, a component in a plugin call or an asynchronous component still
+in its cycle publishes no sample. A controller or component hung in a plugin call stops all
+samples until it is gone. Values a plugin writes from threads of its own or from callbacks of its
+node, which run on the manager's executor, are not excluded. The control loop of one manager
+cannot hold off the writers of another without waiting, so while several managers live in one
+process nothing is sampled.
 
 ## Diagnostics
 

@@ -582,7 +582,10 @@ TEST_F(SupervisorThrowTest, a_throw_in_idle_work_holds_everything)
   }
   const testing::LogCapture log;
   hold_under_repeated_throws(StatusThrow::BroadcasterStopped, log);
-  EXPECT_EQ(log.count(std::string("Idle work threw: ") + STATUS_ERROR), 1u) << log.text();
+  // The hold rings from RT and from the hardware owner, and a wake that finds nothing retries
+  EXPECT_NE(
+    log.first(std::string("threw: ") + STATUS_ERROR).find("Idle work threw"), std::string::npos)
+    << log.text();
   EXPECT_TRUE(log.contains("Controller 'controller' stopped by holding everything")) << log.text();
   EXPECT_FALSE(log.contains("stopped by the e-stop")) << log.text();
   rejects_switches(log);

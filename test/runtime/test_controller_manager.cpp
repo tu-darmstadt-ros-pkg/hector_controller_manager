@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -33,6 +34,7 @@
 #include "gate.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hector_controller_manager/controller_manager.hpp"
+#include "hector_controller_manager/introspection.hpp"
 #include "hector_controller_manager/leak.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
 #include "log_capture.hpp"
@@ -453,10 +455,11 @@ TEST_F(ControllerManagerTest, the_statistics_give_execution_times_in_microsecond
   const testing::RtThread loop(
     [&](const rclcpp::Time &, const rclcpp::Duration & period)
     { testing::read_update_write(*cm, cm->now(), period); }, 0.001, 0ms);
-  const auto value_of = [](const std::string & name)
+  const std::string key =
+    cm->get_node_topics_interface()->resolve_topic_name(hardware_interface::CM_STATISTICS_TOPIC);
+  const auto value_of = [&](const std::string & name)
   {
-    const auto message =
-      pal_statistics::getRegistry(hardware_interface::CM_STATISTICS_KEY)->createMsg();
+    const auto message = pal_statistics::getRegistry(key)->createMsg();
     for (const auto & statistic : message.statistics)
     {
       if (statistic.name == name)
@@ -479,8 +482,10 @@ TEST_F(ControllerManagerTest, the_statistics_give_execution_times_in_microsecond
   activate->activate_controllers = {"slow"};
   activate->strictness = ControllerManager::SwitchController::Request::STRICT;
   auto activated = std::make_shared<ControllerManager::SwitchController::Response>();
+  EXPECT_TRUE(cm->active_controllers().empty());
   cm->switch_controller_service_cb(activate, activated);
   ASSERT_TRUE(activated->ok) << activated->message;
+  EXPECT_EQ(cm->active_controllers(), std::vector<std::string>{"slow"});
   EXPECT_TRUE(eventually([&] { return value_of(read) != 0.0 && value_of(update) != 0.0; }, 10s));
   // Generous above, a preempted cycle may take a few ms
   for (const auto & name : {read, update})
@@ -488,6 +493,55 @@ TEST_F(ControllerManagerTest, the_statistics_give_execution_times_in_microsecond
     EXPECT_GE(value_of(name), 1000.0) << name;
     EXPECT_LT(value_of(name), 50'000.0) << name;
   }
+}
+
+/// The names in the statistics registry of `cm`, none if it has none.
+std::set<std::string> statistics_of(ControllerManager & cm)
+{
+  const auto registry = pal_statistics::getRegistry(
+    cm.get_node_topics_interface()->resolve_topic_name(hardware_interface::CM_STATISTICS_TOPIC));
+  std::set<std::string> names;
+  if (registry)
+  {
+    for (const auto & statistic : registry->createMsg().statistics)
+    {
+      names.insert(statistic.name);
+    }
+  }
+  return names;
+}
+
+// A registry holds its manager's publisher and clock, which a successor of the same name must not
+// inherit, and one manager's shutdown must not unregister another's statistics
+TEST_F(ControllerManagerTest, each_manager_and_each_successor_of_a_name_has_statistics_of_its_own)
+{
+  const auto make = [](const std::string & name)
+  {
+    rclcpp::NodeOptions options = get_cm_node_options();
+    options.parameter_overrides({{"robot_description", URDF}});
+    return std::make_shared<ControllerManager>(
+      std::make_shared<rclcpp::executors::SingleThreadedExecutor>(), name, RUN_NAMESPACE, options,
+      [](const hardware_interface::HardwareInfo &) { return std::make_unique<System>(); });
+  };
+  auto first = make("cm_first");
+  auto second = make("cm_second");
+  EXPECT_TRUE(statistics_of(*first).contains("cm_first.total_time"));
+  EXPECT_FALSE(statistics_of(*first).contains("cm_second.total_time"));
+  const std::set<std::string> kept = statistics_of(*second);
+  ASSERT_TRUE(kept.contains("cm_second.total_time"));
+  first->shutdown();
+  EXPECT_EQ(statistics_of(*second), kept);
+
+  const std::string key =
+    first->get_node_topics_interface()->resolve_topic_name(hardware_interface::CM_STATISTICS_TOPIC);
+  const std::weak_ptr left_behind = pal_statistics::getRegistry(key);
+  first.reset();
+  EXPECT_EQ(statistics_of(*second), kept);
+  auto successor = make("cm_first");
+  EXPECT_TRUE(left_behind.expired());
+  EXPECT_TRUE(statistics_of(*successor).contains("cm_first.total_time"));
+  successor->shutdown();
+  second->shutdown();
 }
 
 /// Counts its reads in a value registered for introspection, as upstream plugins do.
@@ -581,7 +635,6 @@ TEST_P(IntrospectionTest, publishes_the_values_of_active_plugins_and_controllers
     {{"robot_description", urdf},
      {"probe.type", std::string("test/Introspected")},
      {"temp.type", std::string("test/Introspected")}});
-  // A name per mode, so the second gets the topic only from a registry of its own
   const std::string name = GetParam() ? "cm_introspection_async" : "cm_introspection_sync";
   auto cm = std::make_shared<FakeControllerManager<IntrospectedController>>(
     executor, name, RUN_NAMESPACE, options, [](const hardware_interface::HardwareInfo &)
@@ -591,7 +644,7 @@ TEST_P(IntrospectionTest, publishes_the_values_of_active_plugins_and_controllers
   std::map<std::string, double> latest;
   auto subscription = listener->create_subscription<pal_statistics_msgs::msg::Statistics>(
     // pal_statistics publishes best effort
-    RUN_NAMESPACE + "/" + name + "/introspection_data/full", rclcpp::SensorDataQoS(),
+    Introspection::get()->topic() + "/full", rclcpp::SensorDataQoS(),
     [&](const pal_statistics_msgs::msg::Statistics & message)
     {
       const std::lock_guard lock(mutex);
@@ -680,6 +733,77 @@ TEST_P(IntrospectionTest, publishes_the_values_of_active_plugins_and_controllers
 INSTANTIATE_TEST_SUITE_P(
   SyncAndAsync, IntrospectionTest, ::testing::Bool(),
   [](const ::testing::TestParamInfo<bool> & info) { return info.param ? "async" : "sync"; });
+
+/// A controller manager with an IntrospectedSystem whose control loop runs.
+class RunningManager
+{
+public:
+  explicit RunningManager(const std::string & name)
+  : executor_(std::make_shared<rclcpp::executors::SingleThreadedExecutor>()),
+    cm_(
+      std::make_shared<ControllerManager>(
+        executor_, name, RUN_NAMESPACE, options(), [](const hardware_interface::HardwareInfo &)
+        { return std::make_unique<IntrospectedSystem>(); })),
+    spinning_(executor_, cm_),
+    loop_([this](const rclcpp::Time &, const rclcpp::Duration & period)
+          { testing::read_update_write(*cm_, cm_->now(), period); })
+  {
+  }
+
+  ControllerManager & cm() { return *cm_; }
+
+private:
+  static rclcpp::NodeOptions options()
+  {
+    rclcpp::NodeOptions options = get_cm_node_options();
+    options.parameter_overrides({{"robot_description", URDF}});
+    return options;
+  }
+
+  std::shared_ptr<rclcpp::Executor> executor_;
+  std::shared_ptr<ControllerManager> cm_;
+  Spinning spinning_;
+  testing::RtThread loop_;
+};
+
+// The RT loop of one manager cannot hold off the writers of another, which TSan reports. The
+// registry stays published after either manager ends.
+TEST_F(ControllerManagerTest, introspection_is_sampled_only_while_one_manager_lives)
+{
+  auto first = std::make_unique<RunningManager>("cm_introspection_first");
+  RunningManager second("cm_introspection_second");
+  ASSERT_TRUE(
+    eventually([&] { return first->cm().is_initialized() && second.cm().is_initialized(); }, 10s));
+
+  auto listener = std::make_shared<rclcpp::Node>("introspection_listener", RUN_NAMESPACE);
+  std::atomic<int> samples{0};
+  const auto subscription = listener->create_subscription<pal_statistics_msgs::msg::Statistics>(
+    Introspection::get()->topic() + "/full", rclcpp::SensorDataQoS(),
+    [&](const pal_statistics_msgs::msg::Statistics & message)
+    {
+      for (const auto & statistic : message.statistics)
+      {
+        samples += statistic.name == "system.reads" ? 1 : 0;
+      }
+    });
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(listener);
+  const auto samples_within = [&](std::chrono::milliseconds time)
+  {
+    samples = 0;
+    const auto end = std::chrono::steady_clock::now() + time;
+    while (std::chrono::steady_clock::now() < end)
+    {
+      executor.spin_some(10ms);
+    }
+    return samples.load();
+  };
+  // Samples taken before the second manager joined may still arrive
+  samples_within(500ms);
+  EXPECT_EQ(samples_within(1s), 0);
+  first.reset();
+  EXPECT_GT(samples_within(1s), 0);
+}
 
 /// Options with the controller `slow` that a SlowControllerManager creates.
 rclcpp::NodeOptions slow_controller_options()
@@ -997,6 +1121,27 @@ TEST_F(ControllerManagerTest, the_process_exits_without_static_destruction_after
   EXPECT_EXIT(
     {
       leak(std::make_shared<rclcpp::Node>("leaked"));
+      rclcpp::shutdown();
+      std::atexit([] { std::_Exit(3); });
+      exit_process(0);
+    },
+    ::testing::ExitedWithCode(0), "");
+}
+
+// The introspection node lives to the end of the process
+TEST_F(ControllerManagerTest, the_process_exits_without_static_destruction_after_a_manager)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT(
+    {
+      rclcpp::NodeOptions options = get_cm_node_options();
+      options.parameter_overrides({{"robot_description", URDF}});
+      auto cm = std::make_shared<ControllerManager>(
+        std::make_shared<rclcpp::executors::SingleThreadedExecutor>(), "cm_exit", RUN_NAMESPACE,
+        options,
+        [](const hardware_interface::HardwareInfo &) { return std::make_unique<System>(); });
+      cm->shutdown();
+      cm.reset();
       rclcpp::shutdown();
       std::atexit([] { std::_Exit(3); });
       exit_process(0);

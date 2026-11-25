@@ -39,6 +39,8 @@ after a release.
 - The `activate_asap` flag of a switch request is ignored.
 - `list_controllers` lists the controllers in name order.
 - Controllers get no `on_shutdown` when the process exits.
+- The introspection is on `ros2_control/introspection_data` in the namespace of the first
+  controller manager of the process, not on `~/introspection_data` of the manager.
 - At shutdown a controller hung in `on_deactivate` leaves the hardware only the 400 ms grace to
   deactivate and shut down.
 - Deactivating hardware is refused while an active controller commands it, where upstream refuses
