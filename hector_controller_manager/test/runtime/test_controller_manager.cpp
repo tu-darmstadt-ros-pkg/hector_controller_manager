@@ -513,6 +513,62 @@ std::set<std::string> statistics_of(ControllerManager & cm)
 
 // A registry holds its manager's publisher and clock, which a successor of the same name must not
 // inherit, and one manager's shutdown must not unregister another's statistics
+// Each switch publishes a new status and frees the old one, which a reader must still hold. A
+// sanitizer build catches a read of the freed snapshot.
+TEST_F(ControllerManagerTest, active_controllers_during_switches_reads_a_snapshot_it_holds)
+{
+  auto executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  rclcpp::NodeOptions options = get_cm_node_options();
+  options.parameter_overrides(
+    {{"robot_description", URDF}, {"slow.type", std::string("test/Slow")}});
+  auto cm = std::make_shared<SlowControllerManager>(
+    executor, "cm_active_reader", "", options,
+    [](const hardware_interface::HardwareInfo &) { return std::make_unique<System>(); });
+  const Spinning spinning(executor, cm);
+  const testing::RtThread loop(
+    [&](const rclcpp::Time &, const rclcpp::Duration & period)
+    { testing::read_update_write(*cm, cm->now(), period); }, 0.001, 0ms);
+  ASSERT_TRUE(eventually([&] { return cm->is_initialized(); }, 10s));
+  ASSERT_TRUE(cm->load_controller("slow").ok);
+  auto configure = std::make_shared<ControllerManager::ConfigureController::Request>();
+  configure->name = "slow";
+  auto configured = std::make_shared<ControllerManager::ConfigureController::Response>();
+  cm->configure_controller_service_cb(configure, configured);
+  ASSERT_TRUE(configured->ok);
+
+  std::atomic<bool> done{false};
+  std::atomic<int> unexpected{0};
+  std::thread reader(
+    [&]
+    {
+      while (!done)
+      {
+        const auto active = cm->active_controllers();
+        if (!active.empty() && active != std::vector<std::string>{"slow"})
+        {
+          ++unexpected;
+        }
+      }
+    });
+  const testing::OnExit join(
+    [&]
+    {
+      done = true;
+      reader.join();
+    });
+  // About 3 ms a switch, enough rounds that a sanitizer build sees a freed snapshot nearly always
+  for (int i = 0; i < 1000; ++i)
+  {
+    auto request = std::make_shared<ControllerManager::SwitchController::Request>();
+    (i % 2 == 0 ? request->activate_controllers : request->deactivate_controllers) = {"slow"};
+    request->strictness = ControllerManager::SwitchController::Request::STRICT;
+    auto response = std::make_shared<ControllerManager::SwitchController::Response>();
+    cm->switch_controller_service_cb(request, response);
+    ASSERT_TRUE(response->ok) << response->message;
+  }
+  EXPECT_EQ(unexpected, 0);
+}
+
 TEST_F(ControllerManagerTest, each_manager_and_each_successor_of_a_name_has_statistics_of_its_own)
 {
   const auto make = [](const std::string & name)

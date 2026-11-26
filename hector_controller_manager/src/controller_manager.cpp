@@ -310,7 +310,9 @@ bool ControllerManager::is_initialized() const { return supervisor_->status()->i
 std::vector<std::string> ControllerManager::active_controllers() const
 {
   std::vector<std::string> active;
-  for (const auto & controller : supervisor_->status()->controllers)
+  // A range-for over status()->controllers would free the snapshot before its body runs
+  const auto snapshot = supervisor_->status();
+  for (const auto & controller : snapshot->controllers)
   {
     if (controller.model.state == Lifecycle::Active)
     {
