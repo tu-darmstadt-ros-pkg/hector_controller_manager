@@ -1,0 +1,3 @@
+[default.extend-words]
+# clang-tidy's opt-in analyzer checks are named clang-analyzer-optin.*
+optin = "optin"

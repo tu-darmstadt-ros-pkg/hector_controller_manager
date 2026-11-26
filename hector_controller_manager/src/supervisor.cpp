@@ -279,6 +279,7 @@ Supervisor::~Supervisor()
   }
   for (auto & [name, controller] : entities_.controllers)
   {
+    // NOLINTBEGIN(bugprone-branch-clone) a quarantined controller is leaked without asking the host
     if (model_.controllers.at(name).quarantined)
     {
       leak(std::move(controller));
@@ -287,6 +288,7 @@ Supervisor::~Supervisor()
     {
       leak(std::move(controller));
     }
+    // NOLINTEND(bugprone-branch-clone)
   }
   for (auto & [name, hardware] : entities_.hardware)
   {
