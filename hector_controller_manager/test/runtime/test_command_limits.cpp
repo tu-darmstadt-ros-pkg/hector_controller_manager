@@ -267,7 +267,8 @@ TEST_P(CommandLimitsTest, a_position_goal_jump_reaches_the_hardware_at_the_veloc
   EXPECT_LE(std::abs(observed_.first.load()), STEP * observed_.first_periods.load());
   EXPECT_LE(observed_.largest_step.load(), STEP);
   EXPECT_GT(observed_.largest_step.load(), STEP / 2) << "precondition: the joint moved";
-  EXPECT_GT(supervisor_->status()->hardware.front().runtime->stats().clamped(), 0u);
+  const auto status = supervisor_->status();
+  EXPECT_GT(status->hardware.front().runtime->stats().clamped(), 0u);
 }
 
 TEST_P(CommandLimitsTest, an_acceleration_limit_from_the_parameters_is_enforced)
@@ -381,7 +382,12 @@ TEST_P(CommandLimitsTest, limiting_does_not_allocate_in_the_control_loop)
   start_with({});
   ASSERT_TRUE(activate_and_write(5));
   const uint64_t before = testing::counted_allocations();
-  const uint64_t clamped = supervisor_->status()->hardware.front().runtime->stats().clamped();
+  const auto runtime = [&]
+  {
+    const auto status = supervisor_->status();
+    return status->hardware.front().runtime;
+  };
+  const uint64_t clamped = runtime()->stats().clamped();
   counting_ = true;
   EXPECT_TRUE(cycles(100));
   observed_.actual = 1.05;
@@ -390,9 +396,8 @@ TEST_P(CommandLimitsTest, limiting_does_not_allocate_in_the_control_loop)
   EXPECT_TRUE(cycles(100));
   counting_ = false;
   EXPECT_EQ(testing::counted_allocations() - before, 0u);
-  const auto & runtime = *supervisor_->status()->hardware.front().runtime;
-  EXPECT_GT(runtime.stats().clamped(), clamped) << "precondition: it clamped";
-  EXPECT_GT(runtime.stats().out_of_range_cycles(), 0u)
+  EXPECT_GT(runtime()->stats().clamped(), clamped) << "precondition: it clamped";
+  EXPECT_GT(runtime()->stats().out_of_range_cycles(), 0u)
     << "precondition: it saw the joint out of range";
 }
 

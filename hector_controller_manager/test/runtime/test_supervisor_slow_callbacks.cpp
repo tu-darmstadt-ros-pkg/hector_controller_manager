@@ -476,7 +476,11 @@ TEST_F(SupervisorSlowCallbacks, a_fault_during_a_restart_names_the_cause_of_the_
   observed_.prepare_gate.close();
   auto restart = std::async(std::launch::async, [&] { return switch_controllers({"a"}, {"a"}); });
   ASSERT_TRUE(observed_.prepare_gate.holds());
-  const auto system = supervisor_->status()->hardware.front().runtime;
+  const auto system = [&]
+  {
+    const auto status = supervisor_->status();
+    return status->hardware.front().runtime;
+  }();
   ASSERT_TRUE(eventually([&] { return system->fault() != core::HardwareFault::None; }))
     << "precondition: the held prepare hangs the component";
   ASSERT_TRUE(cycles(5));
@@ -647,8 +651,8 @@ TEST_F(SupervisorSlowCallbacks, a_stalled_async_owner_without_running_claimers_i
   start(
     2000ms, nullptr,
     testing::urdf({{"j1", {"velocity"}}, {"j2", {"velocity"}}}, R"(is_async="true")"));
-  ASSERT_TRUE(supervisor_->status()->hardware.front().runtime->is_async())
-    << "precondition: the owner writes";
+  const auto status = supervisor_->status();
+  ASSERT_TRUE(status->hardware.front().runtime->is_async()) << "precondition: the owner writes";
   // Three hang timeouts
   observed_.write_delay_ms = 300;
   ASSERT_TRUE(eventually([&] { return observed_.delayed_writes.load() >= 1; }));

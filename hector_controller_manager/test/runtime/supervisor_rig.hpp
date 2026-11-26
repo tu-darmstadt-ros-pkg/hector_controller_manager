@@ -121,7 +121,11 @@ protected:
     return found ? std::optional<core::Controller>(found->model) : std::nullopt;
   }
 
-  core::Hardware hardware() { return supervisor_->status()->hardware.front().model; }
+  core::Hardware hardware()
+  {
+    const auto status = supervisor_->status();
+    return status->hardware.front().model;
+  }
 
   bool quarantined()
   {

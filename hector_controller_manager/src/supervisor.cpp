@@ -231,7 +231,6 @@ bool Supervisor::runs_control_loop() const
 void Supervisor::report_scheduling(diagnostic_updater::DiagnosticStatusWrapper & stat) const
 {
   std::vector<std::pair<std::string, runtime::Scheduling>> owners;
-  // A range-for over status()->hardware would free the snapshot before its body runs
   const auto snapshot = status();
   for (const auto & hardware : snapshot->hardware)
   {
@@ -319,10 +318,10 @@ std::string Supervisor::stop_cause(const std::string & name, uint64_t activation
            : "because another controller or hardware failed";
 }
 
-std::shared_ptr<const Status> Supervisor::status() const
+StatusSnapshot Supervisor::status() const
 {
   std::lock_guard<std::mutex> lock(status_mutex_);
-  return status_;
+  return StatusSnapshot(status_);
 }
 
 void Supervisor::set_estop(bool engaged, std::string cause)

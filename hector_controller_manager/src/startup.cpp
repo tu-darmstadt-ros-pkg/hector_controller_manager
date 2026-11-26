@@ -46,7 +46,11 @@ Startup::Startup(
 std::map<std::string, core::Lifecycle> Startup::read_hardware_targets()
 {
   runtime::expect_precondition(
-    [this] { return !supervisor_.status()->initialized; },
+    [this]
+    {
+      const auto status = supervisor_.status();
+      return !status->initialized;
+    },
     "Startup::read_hardware_targets after the initialization");
   std::map<std::string, core::Lifecycle> targets;
   for (const auto & name : string_list(node_, "hardware_components_initial_state.unconfigured"))
@@ -152,7 +156,7 @@ bool Startup::pause(uint64_t release, std::chrono::milliseconds time)
 void Startup::run(uint64_t release)
 {
   // Initialization runs the startup itself once the description arrived
-  if (!supervisor_.status()->initialized)
+  if (const auto status = supervisor_.status(); !status->initialized)
   {
     return;
   }
