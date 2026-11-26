@@ -96,6 +96,7 @@ std::shared_ptr<Plan> build_plan(
         const auto * owner = index.hardware_command(interface);
         if (owner && owner->owner == name)
         {
+          // NOLINTNEXTLINE(bugprone-unchecked-optional-access) the component owns the interface
           claimed[*component->command_index(interface)] = {
             controllers.at(claimer).get(), model.controllers.at(claimer).activation};
         }

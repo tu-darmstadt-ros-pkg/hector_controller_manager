@@ -13,3 +13,11 @@ jobs:
     uses: tu-darmstadt-ros-pkg/hector_ros2_ci/.github/workflows/build-and-test.yml@v1
     with:
       rosdistro: lyrical
+  # Runs beside build-and-test, so clang-tidy and the sanitizer add no wall time
+  asan-and-clang-tidy:
+    uses: tu-darmstadt-ros-pkg/hector_ros2_ci/.github/workflows/build-and-test.yml@v1
+    with:
+      rosdistro: lyrical
+      cmake-args: '"-DCMAKE_CXX_FLAGS=-fsanitize=address -fno-omit-frame-pointer"'
+      ctest-args: -L concurrency
+      clang-tidy: true

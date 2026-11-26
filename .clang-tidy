@@ -1,0 +1,5 @@
+# ROS include guards use double underscores, and the opt-in analyzer checks report style and pluginlib headers
+Checks: "-*,bugprone-*,clang-analyzer-*,-bugprone-easily-swappable-parameters,-bugprone-reserved-identifier,-clang-analyzer-optin.*"
+CheckOptions:
+  bugprone-unused-return-value.AllowCastToVoid: true
+HeaderFilterRegex: "hector_controller_manager/(include|src|test)/"

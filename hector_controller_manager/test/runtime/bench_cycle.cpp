@@ -342,7 +342,8 @@ void run(int joints, const Options & options)
   }
   measure = true;
   loop.join();
-  const auto & stats = supervisor.status()->hardware.front().runtime->stats();
+  const auto status = supervisor.status();
+  const auto & stats = status->hardware.front().runtime->stats();
   const uint64_t skipped = stats.skipped();
   const uint64_t clamped = stats.clamped();
   check(supervisor.shutdown(std::chrono::seconds(5)), "shutdown");

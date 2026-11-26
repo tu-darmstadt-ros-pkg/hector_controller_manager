@@ -108,6 +108,22 @@ struct Status
   std::vector<HardwareStatus> hardware;
 };
 
+/// A status its holder keeps alive. Only a named snapshot gives access, since a range-for over a
+/// member of a temporary one destroys it before the body runs, freeing what the loop reads.
+class StatusSnapshot
+{
+public:
+  explicit StatusSnapshot(std::shared_ptr<const Status> status) : status_(std::move(status)) {}
+
+  const Status & operator*() const & { return *status_; }
+  const Status * operator->() const & { return status_.get(); }
+  const Status & operator*() const && = delete;
+  const Status * operator->() const && = delete;
+
+private:
+  std::shared_ptr<const Status> status_;
+};
+
 struct StartupSwitch
 {
   /// What the switch activates, empty if it did not run.
@@ -150,7 +166,7 @@ public:
   /// from its start.
   Response shutdown(Clock::duration timeout);
 
-  std::shared_ptr<const Status> status() const;
+  StatusSnapshot status() const;
   /// Any thread. Whether a request or the close waits for the supervisor thread, so tests can
   /// order calls against it.
   bool requests_waiting() { return requests_.waiting(); }

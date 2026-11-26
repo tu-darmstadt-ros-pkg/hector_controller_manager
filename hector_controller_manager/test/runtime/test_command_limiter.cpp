@@ -464,6 +464,7 @@ TEST(CommandLimiter, invalid_limits_and_a_missing_position_state_are_rejected)
   stateless_velocity.add("j1", limits(-1, 1, NaN), {"velocity"});
   try
   {
+    // NOLINTNEXTLINE(bugprone-unused-raii) only the constructor's throw matters
     CommandLimiter(
       stateless_velocity.info_, {std::make_shared<CommandInterface>("j1", "velocity")}, {}, NO_CAP);
     ADD_FAILURE() << "a velocity command with position limits but no position state was accepted";

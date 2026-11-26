@@ -140,7 +140,7 @@ TEST_P(Scheduling, a_thread_that_reads_back_other_than_fifo_is_an_error)
   scheduler_.realtime_kernel = [] { return true; };
   scheduler_.set_policy = [](int, int)
   { return runtime::schedule_without_inheritance(SCHED_OTHER, 0); };
-  TokenRig::SetUp();
+  TokenRig::SetUp();  // NOLINT(bugprone-parent-virtual-call) the fixture defers it to the stubs
   std::thread([&] { supervisor_->schedule_control_loop(); }).join();
   const auto stat = report();
   EXPECT_EQ(stat.level, DiagnosticStatus::ERROR) << stat.message;

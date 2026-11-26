@@ -119,6 +119,7 @@ void ShadowHandles::rt_note_claims(const std::vector<Plan::Claim> & claims) noex
   }
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) init copies only double handles, which never throw
 bool ShadowHandles::copy_states() noexcept
 {
   for (size_t i = 0; i < state_copies_.size(); ++i)
@@ -154,6 +155,7 @@ bool ShadowHandles::copy_states() noexcept
   return complete;
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) init copies only double handles, which never throw
 bool ShadowHandles::copy_commands(
   const rclcpp::Time & time, const rclcpp::Duration & period, bool through_block) noexcept
 {

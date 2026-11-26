@@ -102,6 +102,8 @@ install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  # Isolated tests get their own ROS domain, so they can run in parallel
+  find_package(ament_cmake_ros REQUIRED)
   # Tests load the library of this build tree, also when a sourced install of an
   # older one sets LD_LIBRARY_PATH, since DT_RPATH is searched before it and
   # DT_RUNPATH after it
@@ -138,7 +140,7 @@ if(BUILD_TESTING)
                   ${EXPLORER_TIMEOUT})
   target_link_libraries(test_explorer hector_controller_manager_core)
 
-  ament_add_gtest(
+  ament_add_ros_isolated_gtest(
     test_runtime
     test/runtime/test_controller_lifecycle.cpp
     test/runtime/test_controller_runtime.cpp
@@ -172,36 +174,41 @@ if(BUILD_TESTING)
   add_dependencies(test_runtime leak_probe)
 
   # Separate, it replaces syscall to count futex wakes
-  ament_add_gtest(test_wake_syscalls test/runtime/test_wake_syscalls.cpp
-                  TIMEOUT 60)
+  ament_add_ros_isolated_gtest(test_wake_syscalls
+                               test/runtime/test_wake_syscalls.cpp TIMEOUT 60)
   link_cm_test(test_wake_syscalls ${CMAKE_DL_LIBS})
 
   # Separate, it replaces operator new to count allocations of the control loop
-  ament_add_gtest(test_supervisor test/runtime/test_supervisor.cpp
-                  test/runtime/allocation_counter.cpp TIMEOUT 300)
+  ament_add_ros_isolated_gtest(test_supervisor test/runtime/test_supervisor.cpp
+                               test/runtime/allocation_counter.cpp TIMEOUT 300)
   link_cm_test(test_supervisor)
   # Separate, it replaces operator new to count allocations of the command
   # limits
-  ament_add_gtest(
+  ament_add_ros_isolated_gtest(
     test_command_limiter test/runtime/test_command_limiter.cpp
     test/runtime/test_command_limits.cpp test/runtime/allocation_counter.cpp
     TIMEOUT 120)
   link_cm_test(test_command_limiter)
-  ament_add_gtest(test_supervisor_failures
-                  test/runtime/test_supervisor_failures.cpp TIMEOUT 300)
+  ament_add_ros_isolated_gtest(
+    test_supervisor_failures test/runtime/test_supervisor_failures.cpp TIMEOUT
+    300)
   link_cm_test(test_supervisor_failures)
-  ament_add_gtest(test_supervisor_slow_callbacks
-                  test/runtime/test_supervisor_slow_callbacks.cpp TIMEOUT 300)
+  ament_add_ros_isolated_gtest(
+    test_supervisor_slow_callbacks
+    test/runtime/test_supervisor_slow_callbacks.cpp TIMEOUT 300)
   link_cm_test(test_supervisor_slow_callbacks)
-  ament_add_gtest(test_controller_manager
-                  test/runtime/test_controller_manager.cpp TIMEOUT 600)
+  ament_add_ros_isolated_gtest(
+    test_controller_manager test/runtime/test_controller_manager.cpp TIMEOUT
+    600)
   link_cm_test(test_controller_manager)
-  ament_add_gtest(test_handover test/runtime/test_handover.cpp TIMEOUT 300)
+  ament_add_ros_isolated_gtest(test_handover test/runtime/test_handover.cpp
+                               TIMEOUT 300)
   link_cm_test(test_handover)
-  ament_add_gtest(test_fault_handling test/runtime/test_fault_handling.cpp
-                  TIMEOUT 300)
+  ament_add_ros_isolated_gtest(test_fault_handling
+                               test/runtime/test_fault_handling.cpp TIMEOUT 300)
   link_cm_test(test_fault_handling)
-  ament_add_gtest(test_scheduling test/runtime/test_scheduling.cpp TIMEOUT 60)
+  ament_add_ros_isolated_gtest(test_scheduling test/runtime/test_scheduling.cpp
+                               TIMEOUT 60)
   link_cm_test(test_scheduling)
   # Not registered with ctest, see its header for the options
   add_executable(bench_cycle test/runtime/bench_cycle.cpp)
@@ -212,7 +219,7 @@ if(BUILD_TESTING)
   # The owner holds async hardware before its writer stops, so the suite gives
   # it no grace cycle
   set(suite_env CM_FUZZ_ASYNC_GRACE_CYCLES=0)
-  ament_add_gtest(
+  ament_add_ros_isolated_gtest(
     test_suite_cm
     test/suite/test_suite_cm.cpp
     SKIP_LINKING_MAIN_LIBRARIES
@@ -226,7 +233,7 @@ if(BUILD_TESTING)
   set(result_file
       ${AMENT_TEST_RESULTS_DIR}/${PROJECT_NAME}/test_suite_cm_all_async.gtest.xml
   )
-  ament_add_test(
+  ament_add_ros_isolated_test(
     test_suite_cm_all_async
     COMMAND
     $<TARGET_FILE:test_suite_cm>
@@ -241,14 +248,16 @@ if(BUILD_TESTING)
     TIMEOUT
     1800)
   # The request services through DDS, with the suite's plugins
-  ament_add_gtest(test_services test/suite/test_services.cpp TIMEOUT 120)
+  ament_add_ros_isolated_gtest(test_services test/suite/test_services.cpp
+                               TIMEOUT 120)
   link_cm_test(test_services cm_test_suite::cm_test_suite_core)
-  ament_add_gtest(test_autostart test/suite/test_autostart.cpp TIMEOUT 120)
+  ament_add_ros_isolated_gtest(test_autostart test/suite/test_autostart.cpp
+                               TIMEOUT 120)
   link_cm_test(test_autostart cm_test_suite::cm_test_suite_core)
   # ros2_control_node's run in child processes ended by signals, its own main
   # runs a child
-  ament_add_gtest(test_signals test/suite/test_signals.cpp
-                  SKIP_LINKING_MAIN_LIBRARIES TIMEOUT 300)
+  ament_add_ros_isolated_gtest(test_signals test/suite/test_signals.cpp
+                               SKIP_LINKING_MAIN_LIBRARIES TIMEOUT 300)
   link_cm_test(test_signals cm_test_suite::cm_test_suite_core)
   # Recorded fuzz scripts, replayed in both modes
   file(GLOB scripts ${CMAKE_CURRENT_SOURCE_DIR}/test/scripts/*.txt)
@@ -256,7 +265,7 @@ if(BUILD_TESTING)
     get_filename_component(name ${script} NAME_WE)
     set(result_file
         ${AMENT_TEST_RESULTS_DIR}/${PROJECT_NAME}/replay_${name}.gtest.xml)
-    ament_add_test(
+    ament_add_ros_isolated_test(
       replay_${name}
       COMMAND
       $<TARGET_FILE:test_suite_cm>
@@ -270,7 +279,41 @@ if(BUILD_TESTING)
       CM_FUZZ_REQUIRE_ALL=1
       TIMEOUT
       300)
+    set_tests_properties(replay_${name} PROPERTIES LABELS concurrency)
+    list(APPEND suite_tests replay_${name})
   endforeach()
+  # Threaded tests short enough for the AddressSanitizer job of the CI
+  set_tests_properties(
+    test_runtime
+    test_wake_syscalls
+    test_supervisor
+    test_command_limiter
+    test_supervisor_failures
+    test_supervisor_slow_callbacks
+    test_controller_manager
+    test_handover
+    test_fault_handling
+    test_scheduling
+    test_services
+    test_autostart
+    test_signals
+    PROPERTIES LABELS concurrency)
+  if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=address")
+    # The job looks for use after free, the tests leak nodes and managers at
+    # exit
+    get_property(
+      tests
+      DIRECTORY
+      PROPERTY TESTS)
+    set_tests_properties(${tests} PROPERTIES ENVIRONMENT
+                                             ASAN_OPTIONS=detect_leaks=0)
+    # The prebuilt libgtest.a of the suite's own main frees with free what it
+    # got from new
+    set_tests_properties(
+      test_suite_cm test_suite_cm_all_async ${suite_tests}
+      PROPERTIES ENVIRONMENT
+                 ASAN_OPTIONS=detect_leaks=0:alloc_dealloc_mismatch=0)
+  endif()
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

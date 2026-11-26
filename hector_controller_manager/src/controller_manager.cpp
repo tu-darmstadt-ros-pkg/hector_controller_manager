@@ -139,7 +139,8 @@ ControllerManager::ControllerManager(
   supervisor_ = std::make_unique<Supervisor>(
     config, *this, get_logger(),
     [this](std::shared_ptr<const Status> status) { on_status(status); });
-  execution_times_.add(*supervisor_->status());
+  const auto status = supervisor_->status();
+  execution_times_.add(*status);
   startup_ = std::make_unique<Startup>(
     *this, *supervisor_, requests_, startup, [this] { return estop_->engaged(); },
     [this](const std::string & name) { return load_controller(name); });
@@ -305,12 +306,17 @@ SupervisorConfig ControllerManager::read_parameters(
   return config;
 }
 
-bool ControllerManager::is_initialized() const { return supervisor_->status()->initialized; }
+bool ControllerManager::is_initialized() const
+{
+  const auto status = supervisor_->status();
+  return status->initialized;
+}
 
 std::vector<std::string> ControllerManager::active_controllers() const
 {
   std::vector<std::string> active;
-  for (const auto & controller : supervisor_->status()->controllers)
+  const auto snapshot = supervisor_->status();
+  for (const auto & controller : snapshot->controllers)
   {
     if (controller.model.state == Lifecycle::Active)
     {
@@ -659,8 +665,8 @@ void ControllerManager::init_services()
 void ControllerManager::list_controllers_srv_cb(
   const ListControllers::Request::SharedPtr, ListControllers::Response::SharedPtr response)
 {
-  response->controller =
-    controller_states(*supervisor_->status(), static_cast<uint16_t>(get_update_rate()));
+  const auto status = supervisor_->status();
+  response->controller = controller_states(*status, static_cast<uint16_t>(get_update_rate()));
 }
 
 void ControllerManager::list_controller_types_srv_cb(
@@ -677,16 +683,17 @@ void ControllerManager::list_hardware_components_srv_cb(
   const ListHardwareComponents::Request::SharedPtr,
   ListHardwareComponents::Response::SharedPtr response)
 {
+  const auto status = supervisor_->status();
   response->component =
-    hardware_component_states(*supervisor_->status(), static_cast<uint16_t>(get_update_rate()));
+    hardware_component_states(*status, static_cast<uint16_t>(get_update_rate()));
 }
 
 void ControllerManager::list_hardware_interfaces_srv_cb(
   const ListHardwareInterfaces::Request::SharedPtr,
   ListHardwareInterfaces::Response::SharedPtr response)
 {
-  hardware_interfaces(
-    *supervisor_->status(), response->command_interfaces, response->state_interfaces);
+  const auto status = supervisor_->status();
+  hardware_interfaces(*status, response->command_interfaces, response->state_interfaces);
 }
 
 void ControllerManager::load_controller_service_cb(

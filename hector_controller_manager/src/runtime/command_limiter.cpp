@@ -127,6 +127,7 @@ bool outside(const joint_limits::JointLimits & limits, double position)
 }
 
 /// NaN without a state, nothing while the state is busy.
+// NOLINTNEXTLINE(bugprone-exception-escape) find_state keeps only double states, which never throw
 std::optional<double> actual(const hardware_interface::StateInterface * state) noexcept
 {
   return state ? state->get_optional() : std::numeric_limits<double>::quiet_NaN();
@@ -239,6 +240,7 @@ CommandLimiter::Restart CommandLimiter::restart(Entry & entry) noexcept
     entry.motion.previous = speed;
     return Restart::Started;
   }
+  // NOLINTNEXTLINE(bugprone-unchecked-optional-access) only a Position entry gets here, positioned
   entry.motion.previous = *position;
   entry.motion.speed = speed;
   return Restart::Started;

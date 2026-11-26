@@ -445,7 +445,8 @@ TEST_F(SupervisorFailures, a_load_that_returns_late_is_forgotten)
   observed_.load_gate.open();
   EXPECT_TRUE(eventually([&] { return host_.forgotten.load() > 0; }));
   EXPECT_EQ(host_.forgotten.load(), 1);
-  EXPECT_TRUE(fresh.status()->controllers.empty());
+  const auto status = fresh.status();
+  EXPECT_TRUE(status->controllers.empty());
   fresh.shutdown(testing::FINISH_TIMEOUT);
 }
 

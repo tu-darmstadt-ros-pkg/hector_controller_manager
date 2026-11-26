@@ -1,0 +1,3 @@
+# Tests read an optional after asserting it, and a test main may throw
+InheritParentConfig: true
+Checks: "-bugprone-unchecked-optional-access,-bugprone-exception-escape"

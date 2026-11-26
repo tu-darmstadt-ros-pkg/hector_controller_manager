@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "allocation_counter.hpp"
@@ -44,6 +45,16 @@ using controller_interface::interface_configuration_type;
 using controller_interface::InterfaceConfiguration;
 using hardware_interface::return_type;
 using testing::eventually;
+
+template <typename Snapshot>
+concept ArrowReadable =
+  requires(Snapshot && snapshot) { std::forward<Snapshot>(snapshot)->initialized; };
+template <typename Snapshot>
+concept StarReadable =
+  requires(Snapshot && snapshot) { (*std::forward<Snapshot>(snapshot)).initialized; };
+// A range-for over a member of a temporary snapshot reads freed memory, so it must not compile
+static_assert(ArrowReadable<const StatusSnapshot &> && StarReadable<const StatusSnapshot &>);
+static_assert(!ArrowReadable<StatusSnapshot> && !StarReadable<StatusSnapshot>);
 
 const std::string URDF = testing::urdf({{"j1", {"position", "velocity"}}});
 
@@ -301,7 +312,13 @@ TEST_F(SupervisorTest, a_slow_destruction_after_an_unload_does_not_block_the_sta
   // Opens the gate before the unload's future waits for the unload
   const testing::OnExit open([&] { observed_.destroy_gate.open(); });
   ASSERT_TRUE(observed_.destroy_gate.holds()) << "precondition: the plugin is being destroyed";
-  auto read = std::async(std::launch::async, [&] { return supervisor_->status() != nullptr; });
+  auto read = std::async(
+    std::launch::async,
+    [&]
+    {
+      const auto status = supervisor_->status();
+      return status->initialized;
+    });
   const bool answered = read.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
   observed_.destroy_gate.open();
   EXPECT_TRUE(answered) << "the status waited for the destruction of the old snapshot";
@@ -624,7 +641,11 @@ TEST_F(SupervisorTest, a_configure_that_succeeds_after_its_timeout_is_cleaned_up
   ASSERT_TRUE(supervisor_->load("slow", "test/Controller").ok);
   observed_.configure_gate.close();
   EXPECT_FALSE(supervisor_->configure("slow").ok);
-  const auto slow = [&] { return supervisor_->status()->controllers.back(); };
+  const auto slow = [&]
+  {
+    const auto status = supervisor_->status();
+    return status->controllers.back();
+  };
   ASSERT_EQ(slow().name, "slow");
   ASSERT_TRUE(slow().model.quarantined) << "precondition: the configure still runs";
   observed_.configure_gate.open();
@@ -652,7 +673,11 @@ TEST_F(SupervisorTest, hardware_that_stops_after_the_shutdown_deadline_still_goe
 {
   observed_.hardware_deactivate_gate.close();
   EXPECT_FALSE(supervisor_->shutdown(std::chrono::milliseconds(200)).ok);
-  const auto system = [&] { return supervisor_->status()->hardware.front().model; };
+  const auto system = [&]
+  {
+    const auto status = supervisor_->status();
+    return status->hardware.front().model;
+  };
   ASSERT_TRUE(system().quarantined) << "precondition: the deactivation still runs";
   observed_.hardware_deactivate_gate.open();
   EXPECT_TRUE(eventually(

@@ -25,4 +25,13 @@ CM_FUZZ_SCRIPT=$PWD/fail.txt ./build/hector_controller_manager/test_suite_cm \
   --gtest_filter='HectorReplay.*'
 ```
 
-Tests in parallel need separate `ROS_DOMAIN_ID`s.
+ctest gives every test that uses ROS its own domain, so `colcon test --ctest-args -j8` runs them in
+parallel. Test binaries started by hand in parallel need separate `ROS_DOMAIN_ID`s.
+
+The CI also runs the threaded tests, labelled `concurrency`, under AddressSanitizer:
+
+```bash
+colcon build --packages-select hector_controller_manager --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  "-DCMAKE_CXX_FLAGS=-fsanitize=address -fno-omit-frame-pointer"
+colcon test --packages-select hector_controller_manager --ctest-args -j8 -L concurrency
+```
