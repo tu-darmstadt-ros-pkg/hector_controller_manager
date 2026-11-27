@@ -15,6 +15,7 @@
 #include "hector_controller_manager/step_executor.hpp"
 
 #include <limits>
+#include <set>
 #include <string>
 
 #include "hector_controller_manager/leak.hpp"
@@ -255,11 +256,48 @@ core::Outcome StepExecutor::deactivate_controller(
   return outcome;
 }
 
+std::string StepExecutor::await_fresh_states(
+  const core::Claims & claims, Clock::time_point deadline)
+{
+  const core::InterfaceIndex index(model_);
+  std::set<std::string> providers;
+  for (const auto & interface : claims.state)
+  {
+    const auto * owner = index.state(interface);
+    if (owner && owner->kind == core::InterfaceOwner::Kind::HardwareState)
+    {
+      providers.insert(owner->owner);
+    }
+  }
+  const auto stale = [&]
+  {
+    std::string names;
+    for (const auto & name : providers)
+    {
+      if (!entities_.hardware.at(name)->states_fresh())
+      {
+        names += (names.empty() ? "'" : ", '") + name + "'";
+      }
+    }
+    return names;
+  };
+  (void)slot_.wait_until([&] { return stale().empty(); }, deadline);
+  return stale();
+}
+
 core::Outcome StepExecutor::activate_controller(
   const core::step::Activate & activate, Clock::time_point deadline)
 {
   auto * controller = entities_.controllers.at(activate.controller).get();
   const std::string name = activate.controller;
+  // Until its first read a reactivated component still shows the states of before, and a
+  // controller seeded from them drives the joints back to where they were
+  if (const auto stale = await_fresh_states(activate.claims, deadline); !stale.empty())
+  {
+    return core::call_outcome(
+      CallResult::Failure, Lifecycle::Inactive,
+      "Hardware " + stale + " delivered no read since its last transition");
+  }
   auto handles = entities_.handles_of(activate.claims);
   auto released = releasable(model_, entities_, activate.claims);
   const bool chained = model_.controllers.at(name).chained;

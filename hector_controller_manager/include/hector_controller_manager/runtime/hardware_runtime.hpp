@@ -129,6 +129,9 @@ public:
   core::HardwareFault fault() const noexcept;
   /// Why the component faulted since its last lifecycle transition, empty without a fault.
   std::string fault_reason() const;
+  /// A read since the last lifecycle transition succeeded and reached the controllers' handles, so
+  /// they hold no state from before that transition.
+  bool states_fresh() const noexcept;
   const HardwareStats & stats() const noexcept { return stats_; }
   /// The command interface the limits clamped last, empty before any clamp.
   std::string last_clamped() const;
@@ -192,6 +195,8 @@ private:
   IoResult io(
     bool write, const rclcpp::Time & time, const rclcpp::Duration & period,
     bool through_block = false) noexcept;
+  /// RT. Copies the states to the shadows and marks them fresh after a read of this generation.
+  void copy_states() noexcept;
 
   hardware_interface::HardwareInfo info_;
   const Clock::duration gate_timeout_;
@@ -211,6 +216,10 @@ private:
   FaultLatch io_fault_;
   FaultLatch call_fault_;
   FaultLatch hang_fault_;
+  /// Generation of the last successful read and of the last copy after one. Written by the IO
+  /// thread and by RT, read by every thread.
+  std::atomic<uint64_t> read_generation_{0};
+  std::atomic<uint64_t> fresh_generation_{0};
   Scheduling owner_scheduling_;
   HangWatch hang_;
   WriteBlock write_block_;

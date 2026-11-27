@@ -92,6 +92,9 @@ private:
   /// Writes the NaN of the released interfaces after on_deactivate.
   core::Outcome deactivate_controller(
     const core::step::Deactivate & deactivate, Clock::time_point deadline);
+  /// Waits until every hardware component the claims read states from read them since its last
+  /// transition. Returns the quoted names of those that did not by the deadline.
+  std::string await_fresh_states(const core::Claims & claims, Clock::time_point deadline);
   /// A failed activation writes the NaN of the released interfaces, a late success is undone.
   core::Outcome activate_controller(
     const core::step::Activate & activate, Clock::time_point deadline);

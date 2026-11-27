@@ -236,6 +236,12 @@ but never read while it is written.
   NaN for every double command interface that the plan of its last update does not claim.
 - **Unclaimed references are NaN.** Before `on_activate` of a chainable controller its owner writes
   NaN into all its references, so a reference without an active writer never carries a stale value.
+- **States only from the current lifecycle state.** A controller is activated only after every
+  hardware component it reads states from returned a successful read since its last lifecycle
+  transition and RT copied that read into the shadows. Until then a component that came back, for
+  example after an e-stop, still shows the states of before, and a controller that takes its hold
+  target from them drives the joints back to where they were. Without such a read by the deadline
+  the activation fails with `Hardware '<name>' delivered no read since its last transition`.
 - **Chained mode** of a provider equals "an active controller writes it". It is set only on a
   controller about to start. A provider whose writer leaves restarts. This holds in settled states.
   During a teardown a provider stays chained for up to one supervisor step after its last writer

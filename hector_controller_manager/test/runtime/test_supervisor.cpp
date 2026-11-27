@@ -18,8 +18,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <future>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -83,6 +85,11 @@ struct Observed
   /// The fault of `fail_read_on_activate` did not come before the activation returned.
   std::atomic<bool> read_fault_missed{false};
   testing::Gate destroy_gate;
+  /// Written into the position state by every read, unless NaN.
+  std::atomic<double> position{std::numeric_limits<double>::quiet_NaN()};
+  /// RT skips the reads, like a bus that has not answered since the component came back.
+  std::atomic<bool> hold_reads{false};
+  std::atomic<double> position_at_activation{std::numeric_limits<double>::quiet_NaN()};
 };
 
 class System : public hardware_interface::SystemInterface
@@ -113,6 +120,10 @@ public:
     {
       observed_.failed_reads.fetch_add(1);
       return return_type::ERROR;
+    }
+    if (const double position = observed_.position; !std::isnan(position))
+    {
+      set_state("j1/position", position);
     }
     return return_type::OK;
   }
@@ -194,6 +205,8 @@ public:
     {
       throw std::runtime_error("4711");
     }
+    observed_.position_at_activation =
+      state_interfaces_[0].get_optional().value_or(std::numeric_limits<double>::quiet_NaN());
     return observed_.refuse_activate ? CallbackReturn::FAILURE : CallbackReturn::SUCCESS;
   }
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override
@@ -261,6 +274,12 @@ protected:
   void cycle(const rclcpp::Time & time, const rclcpp::Duration & period) override
   {
     testing::CountAllocations scope(counting_.load());
+    if (observed_.hold_reads)
+    {
+      supervisor_->rt().update(time, period);
+      supervisor_->rt().write(time, period);
+      return;
+    }
     SupervisorRig::cycle(time, period);
   }
 
@@ -442,6 +461,47 @@ TEST_F(SupervisorTest, a_failed_hardware_transition_answers_with_the_plugin_reas
   EXPECT_FALSE(response.ok);
   EXPECT_NE(response.message.find("on_activate threw: 4712"), std::string::npos)
     << response.message;
+}
+
+/// The joint moves while the component is down, and RT reads it again only after it came back.
+class ReactivatedSupervisorTest : public SupervisorTest
+{
+protected:
+  void SetUp() override
+  {
+    SupervisorTest::SetUp();
+    observed_.position = 1.0;
+    ASSERT_TRUE(cycles(3));
+    ASSERT_TRUE(
+      supervisor_->set_hardware_state("system", core::Lifecycle::Inactive, testing::FINISH_TIMEOUT)
+        .ok);
+    observed_.hold_reads = true;
+    ASSERT_TRUE(cycles(2));
+    observed_.position = 2.0;
+    ASSERT_TRUE(
+      supervisor_->set_hardware_state("system", core::Lifecycle::Active, testing::FINISH_TIMEOUT)
+        .ok);
+  }
+};
+
+TEST_F(ReactivatedSupervisorTest, a_controller_starts_from_the_first_read_after_the_reactivation)
+{
+  auto activation = std::async(std::launch::async, [this] { return activate(); });
+  EXPECT_EQ(activation.wait_for(testing::SLACK), std::future_status::timeout);
+  observed_.hold_reads = false;
+  ASSERT_TRUE(activation.get());
+  EXPECT_EQ(observed_.position_at_activation.load(), 2.0);
+}
+
+TEST_F(ReactivatedSupervisorTest, an_activation_fails_without_a_read_by_its_deadline)
+{
+  const auto response = switch_controllers({"controller"}, {}, std::chrono::milliseconds(200));
+  EXPECT_FALSE(response.ok);
+  EXPECT_NE(
+    response.message.find("Hardware 'system' delivered no read since its last transition"),
+    std::string::npos)
+    << response.message;
+  EXPECT_EQ(state_of_controller(), core::Lifecycle::Inactive);
 }
 
 void SupervisorTest::deactivates_under_an_active_reader()

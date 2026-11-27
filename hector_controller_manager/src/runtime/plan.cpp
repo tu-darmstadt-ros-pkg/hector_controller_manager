@@ -74,6 +74,19 @@ bool PlanSlot::wait_claims_current(uint64_t generation, Clock::time_point deadli
   return true;
 }
 
+bool PlanSlot::wait_until(
+  const std::function<bool()> & reached, Clock::time_point deadline) noexcept
+{
+  while (!wait_for(reached, progress_.value(), deadline))
+  {
+    if (Clock::now() >= deadline)
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
 void PlanSlot::wait_claims_current_or_ring(
   uint64_t generation, uint32_t seen, Clock::time_point deadline) noexcept
 {

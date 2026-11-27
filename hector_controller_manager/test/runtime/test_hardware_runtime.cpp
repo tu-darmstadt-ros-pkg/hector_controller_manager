@@ -919,6 +919,47 @@ TEST_F(HardwareRuntimeTest, an_io_fault_names_the_call_and_its_result)
   EXPECT_EQ(runtime_->fault_reason(), "write returned DEACTIVATE");
 }
 
+TEST_F(HardwareRuntimeTest, the_states_are_fresh_only_after_a_read_since_the_last_transition)
+{
+  const rclcpp::Time time(0, 0, RCL_STEADY_TIME);
+  const rclcpp::Duration period(0, 0);
+  EXPECT_FALSE(runtime_->states_fresh());
+  ASSERT_EQ(runtime_->rt_read(time, period), IoResult::Ok);
+  EXPECT_TRUE(runtime_->states_fresh());
+  run([&] { runtime_->transition(core::step::HardwareTransition::Deactivate); });
+  EXPECT_FALSE(runtime_->states_fresh());
+  ASSERT_EQ(runtime_->rt_read(time, period), IoResult::Ok);
+  EXPECT_TRUE(runtime_->states_fresh());
+  run([&] { runtime_->transition(core::step::HardwareTransition::Activate); });
+  EXPECT_FALSE(runtime_->states_fresh());
+}
+
+TEST_F(HardwareRuntimeTest, a_failed_read_leaves_the_states_stale)
+{
+  script_.read = return_type::ERROR;
+  ASSERT_EQ(
+    runtime_->rt_read(rclcpp::Time(0, 0, RCL_STEADY_TIME), rclcpp::Duration(0, 0)),
+    IoResult::Error);
+  EXPECT_FALSE(runtime_->states_fresh());
+}
+
+TEST_F(HardwareRuntimeTest, an_async_read_is_fresh_once_rt_copied_it)
+{
+  start(true);
+  const rclcpp::Time time(0, 0, RCL_STEADY_TIME);
+  const rclcpp::Duration period(0, 0);
+  read_gate_.close();
+  runtime_->rt_trigger(time, period);
+  ASSERT_TRUE(read_gate_.holds());
+  EXPECT_FALSE(runtime_->states_fresh());
+  read_gate_.open();
+  run([] {});
+  // The owner's read is done, the states reach the controllers with RT's next copy
+  EXPECT_FALSE(runtime_->states_fresh());
+  runtime_->rt_read(time, period);
+  EXPECT_TRUE(runtime_->states_fresh());
+}
+
 TEST_F(HardwareRuntimeTest, a_throwing_read_names_the_exception)
 {
   script_.throw_on_read = true;
