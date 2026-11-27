@@ -137,10 +137,17 @@ protected:
 
   /// The initial startup switch has answered. jsb counts as active before its first update, and
   /// a fault armed before the answer hits the startup switch instead of idle work.
+  /// The initial startup answered and logged, which may come well after its status shows jsb.
   bool started()
   {
-    return eventually([&] { return active("jsb"); }) && switch_controllers(*cm_, {}, {})->ok;
+    return eventually([&]
+                      { return active("jsb") && startup_log_.contains("Startup activated"); }) &&
+           switch_controllers(*cm_, {}, {})->ok;
   }
+
+  /// Exists before the manager, so the initial startup's line is never missed. A capture of a test
+  /// starts empty again.
+  const testing::LogCapture startup_log_;
 };
 
 // The initial startup leaves out what the engaged e-stop rejects, the release brings it, a hard
