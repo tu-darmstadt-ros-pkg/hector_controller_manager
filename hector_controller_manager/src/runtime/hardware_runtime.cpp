@@ -168,6 +168,11 @@ core::HardwareFault HardwareRuntime::fault() const noexcept
   return result;
 }
 
+bool HardwareRuntime::states_fresh() const noexcept
+{
+  return fresh_generation_.load(std::memory_order_acquire) == generation();
+}
+
 void HardwareRuntime::publish_state(Lifecycle state)
 {
   plugin_->set_lifecycle_state(primary_state(state));
@@ -515,6 +520,10 @@ IoResult HardwareRuntime::io(
   }
   if (result == return_type::OK)
   {
+    if (!write)
+    {
+      read_generation_.store(generation(), std::memory_order_release);
+    }
     return IoResult::Ok;
   }
   const bool deactivate = result == return_type::DEACTIVATE;
@@ -554,12 +563,27 @@ IoResult HardwareRuntime::rt_read(
     result = io(false, time, period);
   }
   // A busy owner may be in its read, the trigger copies once it is free
-  if ((!is_async() || rt_owner_free()) && !shadows_.copy_states())
+  if (!is_async() || rt_owner_free())
   {
-    stats_.skip();
+    copy_states();
   }
   gate_.rt_leave();
   return result;
+}
+
+void HardwareRuntime::copy_states() noexcept
+{
+  if (!shadows_.copy_states())
+  {
+    stats_.skip();
+    return;
+  }
+  // The read ran before this copy, so the shadows now hold its states
+  if (const uint64_t current = generation();
+      read_generation_.load(std::memory_order_acquire) == current)
+  {
+    fresh_generation_.store(current, std::memory_order_release);
+  }
 }
 
 IoResult HardwareRuntime::rt_write(
@@ -596,10 +620,7 @@ void HardwareRuntime::rt_trigger(
   // The owner may have finished its cycle after the check, which then still found it busy
   hang_.rt_end_window();
   // An owner that reads past RT's read still gets its states to the controllers
-  if (!shadows_.copy_states())
-  {
-    stats_.skip();
-  }
+  copy_states();
   stamp_.rt_store(time.nanoseconds(), period.nanoseconds());
   // Without a write the cycle still reads
   const bool write = writes(false) && shadows_.copy_commands(time, period, false);

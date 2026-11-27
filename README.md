@@ -143,6 +143,8 @@ When the e-stop is released, the manager brings the startup hardware up again an
 startup controllers that are not active. The same happens when a hardware state request brings a
 component back to active. Protected controllers, controllers whose joints are already in use and
 controllers whose hardware is still down are skipped, and each skip is logged with the reason.
+A controller is activated only after its hardware read once since it came back, so it starts from
+where the joints are now, not from where they were before the e-stop.
 
 The e-stop topics expect one aggregating publisher per topic, such as the e_stop_manager. If several
 nodes publish on one topic, the last message wins, so a release from one of them releases the topic.

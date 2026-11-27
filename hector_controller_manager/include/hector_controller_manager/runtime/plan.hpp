@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -113,6 +114,9 @@ public:
   /// when it leaves a call or ends a write meanwhile.
   void wait_claims_current_or_ring(
     uint64_t generation, uint32_t seen, Clock::time_point deadline) noexcept;
+  /// Until `reached` holds, checked again whenever RT leaves a call. False at the deadline.
+  [[nodiscard]] bool wait_until(
+    const std::function<bool()> & reached, Clock::time_point deadline) noexcept;
 
   /// RT side. Every enter needs a leave. Returns the adopted plan, null before the first.
   const Plan * rt_enter() noexcept;
